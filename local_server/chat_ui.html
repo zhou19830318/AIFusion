@@ -1,0 +1,1130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Fusion — Multi-Provider</title>
+<style>
+  /* ===== dark theme ===== */
+  :root {
+    --bg: #0b0b0e;
+    --surface: #16161a;
+    --surface2: #1e1e24;
+    --border: #2a2a34;
+    --text: #e4e4ec;
+    --text2: #9898a8;
+    --accent: #c12d9c;
+    --accent2: #fc7ab1;
+    --user-bubble: #2a1a3a;
+    --tool-bg: #12121a;
+    --tool-border: #2a2a3a;
+    --error: #e0556a;
+    --success: #4caf93;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  #header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; background: var(--surface);
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  #header svg { width: 22px; height: 22px; flex-shrink: 0; }
+  #header .title { font-weight: 600; font-size: 13px; }
+  #header .badge {
+    margin-left: auto; font-size: 10px; padding: 2px 8px;
+    border-radius: 99px; background: var(--surface2);
+    color: var(--text2); cursor: pointer;
+    border: 1px solid var(--border); white-space: nowrap;
+  }
+  #header .badge:hover { background: var(--border); }
+  #header .badge.configured { color: var(--success); border-color: var(--success); }
+  #history-btn { background: transparent; color: var(--text2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; cursor: pointer; font-size: 11px; }
+  #history-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  #messages {
+    flex: 1; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .msg { max-width: 100%; animation: msgIn 0.15s ease-out; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .msg.user { align-self: flex-end; max-width: 88%; }
+  .msg.user .bubble {
+    background: var(--user-bubble); border: 1px solid #3a2050;
+    border-radius: var(--radius) var(--radius) 2px var(--radius);
+    padding: 8px 12px; color: #e8d0f8;
+  }
+
+  .msg.assistant { align-self: flex-start; max-width: 92%; }
+  .msg.assistant .bubble {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) var(--radius) 2px;
+    padding: 10px 12px; white-space: pre-wrap; word-break: break-word;
+  }
+  .msg.assistant .bubble p { margin: 0 0 6px; }
+  .msg.assistant .bubble p:last-child { margin-bottom: 0; }
+  .msg.assistant .bubble code { background: var(--surface2); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .msg.assistant .bubble pre { background: var(--surface2); padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 11px; margin: 6px 0; }
+
+  .tool-call {
+    align-self: flex-start; max-width: 94%;
+    background: var(--tool-bg); border: 1px solid var(--tool-border);
+    border-radius: var(--radius); padding: 8px 10px; font-size: 12px;
+  }
+  .tool-call .tool-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .tool-call .tool-name { font-weight: 600; color: var(--accent2); }
+  .tool-call .tool-args { color: var(--text2); font-size: 11px; }
+  .tool-call .tool-result {
+    margin-top: 6px; padding: 6px 8px; background: var(--surface);
+    border-radius: 6px; font-size: 11px; max-height: 160px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all;
+    color: var(--text2); border: 1px solid var(--border);
+  }
+  .tool-call .tool-result.error { color: var(--error); border-color: #4a2030; }
+  .tool-call .tool-result.ok { color: var(--success); }
+
+  #input-area { flex-shrink: 0; padding: 8px 10px; background: var(--surface); border-top: 1px solid var(--border); }
+  #input-area form { display: flex; gap: 6px; }
+  #prompt {
+    flex: 1; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 12px; color: var(--text);
+    font-size: 13px; font-family: inherit; resize: none; outline: none;
+    min-height: 36px; max-height: 120px; line-height: 1.4;
+  }
+  #prompt:focus { border-color: var(--accent); }
+  #send-btn {
+    flex-shrink: 0; width: 36px; height: 36px; border: none;
+    border-radius: var(--radius); background: var(--accent); color: #fff;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  #send-btn:hover { background: var(--accent2); }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #status { display: none; padding: 4px 12px; background: #1a1020; border-top: 1px solid #3a2050; font-size: 11px; color: var(--text2); text-align: center; flex-shrink: 0; }
+  #status.visible { display: block; }
+
+  /* ── Settings overlay ── */
+  #settings {
+    display: none; position: absolute; top: 44px; bottom: 60px; left: 0; right: 0;
+    background: var(--bg); z-index: 10; overflow-y: auto; padding: 16px;
+    flex-direction: column; gap: 10px;
+  }
+  #settings.open { display: flex; }
+  #history-panel { display: none; position: absolute; top: 44px; bottom: 60px; left: 0; right: 0; background: var(--bg); z-index: 9; overflow-y: auto; padding: 16px; }
+  #history-panel.open { display: block; }
+  .history-row { display: flex; gap: 6px; margin: 8px 0; }
+  .history-row select, .history-row input { flex: 1; min-width: 0; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px; }
+  .history-btn { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; cursor: pointer; }
+  .history-btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  #history-status { color: var(--text2); font-size: 11px; margin-top: 10px; }
+  #settings label {
+    font-size: 11px; color: var(--text2); text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: -6px;
+  }
+  #settings select, #settings input, #settings textarea {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; color: var(--text);
+    font-size: 13px; font-family: inherit; width: 100%;
+  }
+  #settings textarea { min-height: 80px; resize: vertical; font-size: 12px; }
+  #settings .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+  #settings .btn {
+    flex: 1; padding: 8px; border: none; border-radius: 6px;
+    font-size: 13px; cursor: pointer; font-weight: 600;
+  }
+  #settings .btn.save { background: var(--accent); color: #fff; }
+  #settings .btn.save:hover { background: var(--accent2); }
+  #settings .btn.cancel { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+  /* Provider info row */
+  #settings .info-row {
+    display: flex; align-items: center; gap: 6px; font-size: 11px;
+  }
+  #settings .info-row .dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  #settings .info-row .dot.ok { background: var(--success); }
+  #settings .info-row .dot.missing { background: var(--error); }
+
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; color: var(--text2); text-align: center; gap: 8px; padding: 20px;
+  }
+  .empty-state h2 { font-size: 15px; font-weight: 600; color: var(--text); }
+  .empty-state p { font-size: 12px; max-width: 300px; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Attachments ── */
+  .attach-controls { display: flex; align-items: center; gap: 8px; padding: 4px 4px 2px; }
+  .attach-btn { background: var(--panel2, #2a2f3a); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; padding: 3px 10px; cursor: pointer; }
+  .attach-btn:hover { border-color: var(--accent, #4c8dff); }
+  .attach-count { font-size: 11px; color: var(--text2); }
+  .attach-preview { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px; }
+  .attach-chip { display: flex; align-items: center; gap: 6px; background: var(--panel2, #2a2f3a); border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; max-width: 200px; }
+  .attach-chip img { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; background: #fff; }
+  .attach-chip .file-ic { font-size: 18px; }
+  .attach-chip .name { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attach-chip .rm { cursor: pointer; font-size: 12px; color: var(--text2); border: 0; background: transparent; padding: 0 2px; }
+  .attach-chip .rm:hover { color: var(--error, #e5484d); }
+  .badge-attach { display: inline-block; background: var(--panel2, #2a2f3a); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; padding: 1px 6px; margin-right: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <div id="header">
+    <svg viewBox="0 0 3220 2871" xmlns="http://www.w3.org/2000/svg" style="width:22px;height:22px">
+      <path d="M2256.65 2484.03L2134.81 2049.39L1818.74 923.806L909.855 890.35C590.801 898.868 303.627 1035.23 222.002 1134.03C132.335 1271.65 76.9257 1406.74L65.9034 1441.46C16.1544 2070.54 193.106 2350.51C293.2 2509.6 592.291 2722.34C1159.2 2848.91 1161.28 2848.91L2312.36 2683.51L2256.05 2483.4Z" fill="#C12D9C"/>
+      <path d="M2100.58 1629.25C2065.42 1695.22 2043.68 1725.2L1818.76 923.781L910.175 890.646C1023.38 674.111 1123.17 603.407C1815.79 517.868 2034.14 863.497C2129.77 1070.56 2178.33 1466.69 2100.58 1629.56Z" fill="#C12D9C"/>
+      <path d="M3187.01 2350.84L2312.98 2684.16L2256.67 2484.05L3187.01 2350.84Z" fill="#C12D9C"/>
+    </svg>
+    <span class="title">AI Fusion</span>
+    <button id="history-btn" title="项目历史与会话恢复">历史</button>
+    <span id="model-badge" class="badge" title="Open settings">⚙ deepseek</span>
+  </div>
+
+  <div id="history-panel">
+    <h3>项目历史</h3>
+    <p style="color:var(--text2);font-size:11px;margin-top:4px">对话、工具调用和结果会保存在本机。图片内容和 API Key 不会写入历史。</p>
+    <div class="history-row">
+      <select id="history-project"></select>
+      <button class="history-btn primary" id="history-new-project">新建项目</button>
+    </div>
+    <div class="history-row">
+      <select id="history-session"></select>
+      <button class="history-btn" id="history-new-session">新建会话</button>
+      <button class="history-btn" id="history-restore">恢复</button>
+    </div>
+    <div id="history-status">正在加载历史…</div>
+  </div>
+
+  <div id="messages">
+    <div class="empty-state" id="empty-state">
+      <h2>AI Fusion — Multi-Provider</h2>
+      <p>6 providers supported: DeepSeek · Kimi · GLM · OpenAI · Claude · Gemini</p>
+    </div>
+  </div>
+
+  <div id="status">Thinking...</div>
+
+  <div id="input-area">
+    <form id="chat-form" autocomplete="off">
+      <div id="attach-preview" class="attach-preview"></div>
+      <div class="attach-controls">
+        <button type="button" id="attach-btn" class="attach-btn" title="添加附件（图片或 PDF，单张 ≤8MB，最多 4 个）">📎 附件</button>
+        <span id="attach-count" class="attach-count"></span>
+        <input type="file" id="attach-input" accept="image/*,.pdf" multiple hidden />
+      </div>
+      <textarea id="prompt" rows="1" placeholder="Describe what you want to do..." spellcheck="false"></textarea>
+      <button id="send-btn" type="submit" title="Send (Enter)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </form>
+  </div>
+
+  <!-- ── Settings overlay (dynamic per provider) ── -->
+  <div id="settings">
+    <label>Provider</label>
+    <select id="cfg-provider">
+      <option value="deepseek">DeepSeek</option>
+      <option value="kimi">Kimi (Moonshot)</option>
+      <option value="zhipu">Zhipu GLM</option>
+      <option value="openai">OpenAI</option>
+      <option value="anthropic">Anthropic Claude</option>
+      <option value="google_gemini">Google Gemini</option>
+    </select>
+
+    <div id="cfg-info" class="info-row"></div>
+
+    <label>Model</label>
+    <select id="cfg-model"></select>
+
+    <label id="cfg-apikey-label">API Key</label>
+    <input type="password" id="cfg-apikey" placeholder="sk-..." />
+
+    <label>Base URL</label>
+    <input type="text" id="cfg-baseurl" placeholder="https://..." />
+
+    <label>
+      <input type="checkbox" id="cfg-vision-check" checked />
+      设计完成后自动截图视觉校验
+    </label>
+
+    <label>System Prompt</label>
+    <textarea id="cfg-system-prompt" placeholder="System instructions for the AI..." rows="4"></textarea>
+
+    <div class="btn-row">
+      <button class="btn cancel" id="settings-cancel">Cancel</button>
+      <button class="btn save" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================================
+// AI Fusion — Multi-Provider Chat UI
+//
+// Key features:
+//  - Dynamic provider switching (6 providers)
+//  - Per-provider model list, API key field, base URL
+//  - Backward compatible with the existing /api/chat and /api/config endpoints
+// ============================================================================
+
+(function () {
+  "use strict";
+
+  // ── DOM refs ──
+  const messagesEl   = document.getElementById("messages");
+  const emptyState   = document.getElementById("empty-state");
+  const statusEl     = document.getElementById("status");
+  const promptEl     = document.getElementById("prompt");
+  const formEl       = document.getElementById("chat-form");
+  const sendBtn      = document.getElementById("send-btn");
+  const modelBadge   = document.getElementById("model-badge");
+  const settingsEl   = document.getElementById("settings");
+
+  // ── State ──
+  let conversation = [];
+  let isProcessing = false;
+  let providersMeta = {};  // fetched from /api/models
+  let attachments = [];    // {name, mime, dataUrl, size}
+  let historyProject = null;
+  let historySession = null;
+  let historyProjects = [];
+  const ATTACH_MAX = 4;
+  const ATTACH_MAX_BYTES = 8 * 1024 * 1024;
+
+  function historyState() {
+    return { conversation, provider: modelBadge.dataset.active || "", saved_at: new Date().toISOString() };
+  }
+
+  // CAD reads such as bodies/timeline can be much larger than the provider's
+  // context budget. Keep the full result visible in the Palette, but send a
+  // bounded, useful observation back to the model.
+  const MODEL_TOOL_RESULT_LIMIT = 18000;
+  const MODEL_CONTEXT_LIMIT = 105000;
+  function compactModelText(value, limit = MODEL_TOOL_RESULT_LIMIT) {
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    if (!text || text.length <= limit) return text || "";
+    const head = Math.floor(limit * 0.72);
+    const tail = limit - head;
+    return `${text.slice(0, head)}\n...[tool result truncated for model context: ${text.length} chars]...\n${text.slice(-tail)}`;
+  }
+  function modelConversation() {
+    const copy = conversation.map((msg) => {
+      if (msg.role === "tool") return {...msg, content: compactModelText(msg.content)};
+      if (msg.role === "assistant" && msg.tool_calls) {
+        return {...msg, content: compactModelText(msg.content || "", 6000)};
+      }
+      return msg;
+    });
+    let total = copy.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : JSON.stringify(m.content || "").length), 0);
+    if (total > MODEL_CONTEXT_LIMIT) {
+      // Compress oldest tool observations first; preserve user requests and
+      // the newest tool result because it is most relevant to repair.
+      for (const msg of copy) {
+        if (total <= MODEL_CONTEXT_LIMIT) break;
+        if (msg.role !== "tool" || typeof msg.content !== "string" || msg.content.length <= 1200) continue;
+        const before = msg.content.length;
+        msg.content = compactModelText(msg.content, 1200);
+        total -= before - msg.content.length;
+      }
+    }
+    return copy;
+  }
+
+  async function saveHistoryEvent(eventType, payload) {
+    if (!historySession) return;
+    try {
+      await apiCall("POST", `/api/sessions/${historySession.id}/events`, {
+        event_type: eventType, payload: payload || {}, state: historyState()
+      });
+      const status = document.getElementById("history-status");
+      if (status) status.textContent = `已保存 · ${new Date().toLocaleTimeString()}`;
+    } catch (err) {
+      console.warn("[aifusion] history save failed", err);
+      const status = document.getElementById("history-status");
+      if (status) status.textContent = `历史保存失败：${err.message}`;
+    }
+  }
+
+  function renderHistorySelectors() {
+    const psel = document.getElementById("history-project");
+    const ssel = document.getElementById("history-session");
+    if (!psel || !ssel) return;
+    psel.innerHTML = historyProjects.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("");
+    if (historyProject) psel.value = historyProject.id;
+    ssel.innerHTML = historyProject?.sessions?.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.title)} · ${new Date(s.updated_at).toLocaleString()}</option>`).join("") || "";
+    if (historySession) ssel.value = historySession.id;
+  }
+
+  async function refreshHistory() {
+    const status = document.getElementById("history-status");
+    try {
+      const data = await apiCall("GET", "/api/projects");
+      historyProjects = data.projects || [];
+      if (!historyProjects.length) {
+        const created = await apiCall("POST", "/api/projects", {name: "Fusion design"});
+        historyProjects = [created.project];
+      }
+      for (const project of historyProjects) {
+        project.sessions = (await apiCall("GET", `/api/projects/${project.id}/sessions`)).sessions || [];
+      }
+      historyProject = historyProjects[0];
+      historySession = historyProject.sessions[0] || (await apiCall("POST", `/api/projects/${historyProject.id}/sessions`, {title: "Main design session"})).session;
+      if (!historyProject.sessions.length) historyProject.sessions = [historySession];
+      renderHistorySelectors();
+      if (status) status.textContent = "历史已就绪";
+      await restoreHistory(false);
+    } catch (err) {
+      if (status) status.textContent = `历史不可用：${err.message}`;
+    }
+  }
+
+  async function restoreHistory(showMessage = true) {
+    if (!historySession) return;
+    const data = await apiCall("GET", `/api/sessions/${historySession.id}`);
+    const state = data.session?.state || {};
+    conversation = Array.isArray(state.conversation) ? state.conversation : [];
+    messagesEl.querySelectorAll(".msg, .tool-call").forEach(el => el.remove());
+    if (emptyState) emptyState.style.display = conversation.length ? "none" : "";
+    for (const msg of conversation) {
+      if (msg.role === "user") addMessageEl("user", renderMarkdown(typeof msg.content === "string" ? msg.content : "(已恢复的多模态消息)"));
+      else if (msg.role === "assistant" && msg.content) addMessageEl("assistant", renderMarkdown(msg.content));
+    }
+    if (showMessage) addMessageEl("assistant", `<span style="color:var(--text2)">已恢复会话：${escapeHtml(data.session.title)}</span>`);
+  }
+
+  // ── Vision check (screenshot → multimodal verification) ──
+  const VISION_MAX_ROUNDS = 3;
+  const VISION_CHECK_PROMPT = `你拿到的是 Fusion 当前设计的视口截图，请进行视觉粗校验。对照用户最初的设计要求和你此前给出的 CAD BRIEF（尺寸、特征、外观），检查：
+1. 几何形态与预期是否一致（有无多余或缺失的特征，比例是否明显失调）；
+2. 实体是否完整、位置是否正确；
+3. 是否需要修复优化。
+
+结论必须二选一：
+- 基本符合预期 → 直接输出最终总结（包含尺寸、特征清单、验证结果）；
+- 不符合 → 说明具体问题，继续用 execute 工具修复模型（修复后模型会再次截图校验，最多 ${VISION_MAX_ROUNDS} 轮）。
+
+只依据截图与已执行的建模记录判断，不要凭空猜测尺寸。`;
+
+  // ── API ──
+  const API_BASE = window.location.origin;
+
+  async function apiCall(method, path, body) {
+    const opts = { method, headers: { "Content-Type": "application/json" } };
+    if (body) opts.body = JSON.stringify(body);
+    const resp = await fetch(API_BASE + path, opts);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      const raw = await resp.text();
+      if (/<html|<!doctype/i.test(raw)) {
+        throw new Error(`本地服务未加载最新接口（${path}）。请重启 AIFusion 插件后重试。`);
+      }
+      throw new Error(`接口返回了非 JSON 响应（HTTP ${resp.status}，${path}）`);
+    }
+    let data;
+    try {
+      data = await resp.json();
+    } catch {
+      throw new Error(`接口 JSON 无法解析（HTTP ${resp.status}，${path}）`);
+    }
+    if (!resp.ok) {
+      const detail = data.error && typeof data.error === "object" ? data.error.message : data.error;
+      const err = new Error(detail || `HTTP ${resp.status}`);
+      err.code = data.error?.code;
+      err.retryable = !!data.error?.retryable;
+      err.requestId = data.error?.request_id;
+      throw err;
+    }
+    return data;
+  }
+
+  // ── Vision helpers ──
+  function modelSupportsVision(pid, model) {
+    const pmeta = providersMeta[pid];
+    if (!pmeta) return false;
+    if (pmeta.vision_all) return true;
+    return (pmeta.vision_models || []).includes(model);
+  }
+  function visionCheckEnabled() {
+    const el = document.getElementById("cfg-vision-check");
+    return !el || el.checked;
+  }
+  function isScreenshotResult(r) {
+    return r && typeof r === "object" && !Array.isArray(r) &&
+           r.type === "image" && typeof r.mimeType === "string" &&
+           typeof r.data === "string" && r.data.length > 0;
+  }
+  function buildVisionCheckMessage(r) {
+    return [
+      { type: "text", text: VISION_CHECK_PROMPT },
+      { type: "image_url", image_url: { url: `data:${r.mimeType};base64,${r.data}` } },
+    ];
+  }
+
+  // ── Attachments (user-provided images/PDFs as reference) ──
+  function handleAttachFiles(fileList) {
+    const files = Array.from(fileList || []);
+    for (const f of files) {
+      const isImg = /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
+      const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+      if (!isImg && !isPdf) { alert(`附件 "${f.name}" 类型不支持（仅图片/PDF）`); continue; }
+      if (f.size > ATTACH_MAX_BYTES) { alert(`附件 "${f.name}" 超过 8MB，已跳过`); continue; }
+      if (attachments.length >= ATTACH_MAX) { alert(`附件最多 ${ATTACH_MAX} 个`); break; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        attachments.push({ name: f.name, mime: isPdf ? "application/pdf" : f.type, dataUrl: reader.result, size: f.size });
+        renderAttachments();
+      };
+      reader.readAsDataURL(f);
+    }
+  }
+
+  function renderAttachments() {
+    const box = document.getElementById("attach-preview");
+    const cnt = document.getElementById("attach-count");
+    if (!box) return;
+    box.innerHTML = "";
+    attachments.forEach((a, i) => {
+      const chip = document.createElement("div");
+      chip.className = "attach-chip";
+      const isImg = (a.mime || "").startsWith("image/");
+      chip.innerHTML = `${isImg ? `<img src="${a.dataUrl}" alt="">` : '<span class="file-ic">📄</span>'}
+        <span class="name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+        <button class="rm" title="移除">✕</button>`;
+      chip.querySelector(".rm").onclick = () => { attachments.splice(i, 1); renderAttachments(); };
+      box.appendChild(chip);
+    });
+    if (cnt) cnt.textContent = attachments.length ? `${attachments.length}/${ATTACH_MAX}` : "";
+  }
+
+  function clearAttachments() { attachments = []; renderAttachments(); }
+
+  // 附件 → 发送给模型的 user content（OpenAI 多模态格式数组 / 纯文本）
+  function buildUserMessageContent(userText) {
+    if (!attachments.length) return userText;
+    const [prov, model] = modelBadge.dataset.active ? modelBadge.dataset.active.split("/") : [null, null];
+    if (!modelSupportsVision(prov, model)) {
+      const names = attachments.map(a => a.name).join("、");
+      return `${userText}\n\n[附件提示] 用户附带了 ${attachments.length} 个附件（${names}），但当前模型 ${model || "未知"} 不支持图片输入，附件内容未发送。如需让 AI 查看图片，请切换到支持视觉的模型（Kimi K3 / GPT-5.6 / Claude Sonnet 5 / Gemini 3.7 Flash）。`;
+    }
+    return [
+      ...attachments.map(a => ({ type: "image_url", image_url: { url: a.dataUrl } })),
+      { type: "text", text: userText },
+    ];
+  }
+
+  function renderUserBubble(userText) {
+    let html = escapeHtml(userText && userText.trim() ? userText : "(仅附件)");
+    if (attachments.length) {
+      const chips = attachments.map(a => `<span class="badge-attach">📎 ${escapeHtml(a.name)}</span>`).join("");
+      html += `<br>${chips}`;
+    }
+    return html;
+  }
+
+  // ── Fusion bridge ──
+  function callFusionTool(toolName, args) {
+    return new Promise((resolve) => {
+      function doCall() {
+        try {
+          // CRITICAL: The .pyc execute handler expects args in format:
+          // {featureType: "script", object: {script: "def run..."}}
+          // NOT {featureType: "script", script: "def run..."}
+          let bridgeArgs = args;
+          if (toolName === "execute" && args.featureType) {
+            bridgeArgs = { featureType: args.featureType };
+            if (args.featureType === "script") {
+              bridgeArgs.object = { script: args.script || "" };
+            } else if (args.featureType === "document") {
+              bridgeArgs.object = { action: args.action || "" };
+            } else if (args.featureType === "object") {
+              bridgeArgs.object = { fileId: args.fileId || "" };
+            }
+          }
+          const payload = JSON.stringify({ name: toolName, args: bridgeArgs });
+          const result = adsk.fusionSendData("tool.call", payload);
+          if (result && typeof result.then === "function") {
+            result.then(data => { try { resolve(JSON.parse(data)); } catch { resolve({raw:data}); } })
+                   .catch(err => resolve({error: err.message}));
+          } else {
+            try { resolve(JSON.parse(result)); } catch { resolve({raw: result}); }
+          }
+        } catch (e) { resolve({error: e.message}); }
+      }
+
+      if (typeof adsk !== "undefined" && adsk.fusionSendData) {
+        doCall();
+      } else {
+        // wait up to 3s for adsk
+        let waited = 0;
+        function poll() {
+          waited += 100;
+          if (typeof adsk !== "undefined" && adsk.fusionSendData) { doCall(); }
+          else if (waited >= 3000) {
+          resolve({ok: false, error: {code: "fusion_unavailable", message: "Fusion bridge is unavailable; no CAD operation was executed."}});
+          } else { setTimeout(poll, 100); }
+        }
+        setTimeout(poll, 50);
+      }
+    });
+  }
+
+  // A bridge response can be legacy-shaped. Normalize it before rendering or
+  // sending it back to the model; payload.success=false is never a success.
+  function normalizeToolResult(toolName, result) {
+    if (result == null) return {ok: false, tool: toolName, error: {code: "empty_result", message: "Fusion returned no result."}};
+    if (typeof result === "string") return {ok: false, tool: toolName, error: {code: "string_result", message: result}};
+    if (result.error && !result.ok) return {...result, ok: false, tool: result.tool || toolName};
+    const payload = Object.prototype.hasOwnProperty.call(result, "payload") ? result.payload : result;
+    const success = payload && typeof payload === "object" && payload.success === false ? false : result.ok !== false;
+    if (!success) {
+      return {
+        ...result, ok: false, tool: toolName,
+        error: result.error || {code: "fusion_runtime", message: payload?.error || "Fusion operation failed."},
+      };
+    }
+    return {...result, ok: true, tool: toolName, payload};
+  }
+
+  // ── Rendering ──
+  function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+  function hideEmptyState() { if (emptyState) emptyState.style.display = "none"; }
+  function setStatus(t) { statusEl.textContent = t; statusEl.classList.add("visible"); }
+  function clearStatus() { statusEl.classList.remove("visible"); }
+
+  // ── Thinking 计时(任何等待状态都显示已耗时, 避免"看起来卡死")──
+  let thinkBase = "";
+  let thinkStart = 0;
+  let thinkTimer = null;
+  function setThinking(base) {
+    clearThinkingTimer();
+    thinkBase = base;
+    thinkStart = Date.now();
+    updateThinking();
+    thinkTimer = setInterval(updateThinking, 5000);
+  }
+  function updateThinking() {
+    const secs = ((Date.now() - thinkStart) / 1000) | 0;
+    setStatus(`${thinkBase}… ${secs}s`);
+  }
+  function clearThinkingTimer() {
+    if (thinkTimer) { clearInterval(thinkTimer); thinkTimer = null; }
+  }
+  function clearThinking() {
+    clearThinkingTimer();
+    thinkBase = "";
+    thinkStart = 0;
+    clearStatus();
+  }
+  function escapeHtml(s) {
+    if (!s) return "";
+    const d = document.createElement("div");
+    d.appendChild(document.createTextNode(String(s)));
+    return d.innerHTML;
+  }
+
+  function renderMarkdown(text) {
+    if (!text) return "";
+    let html = escapeHtml(text);
+    html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => `<pre><code>${code.trim()}</code></pre>`);
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join("");
+    html = html.replace(/\n/g, "<br>");
+    return html;
+  }
+
+  function addMessageEl(role, html) {
+    hideEmptyState();
+    const div = document.createElement("div");
+    div.className = `msg ${role}`;
+    div.innerHTML = `<div class="bubble">${html}</div>`;
+    messagesEl.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  function addToolCallEl(toolName, args, result, isError) {
+    hideEmptyState();
+    const div = document.createElement("div");
+    div.className = "tool-call";
+
+    let argsPreview = "";
+    try {
+      const s = JSON.stringify(args);
+      argsPreview = escapeHtml(s.length > 200 ? s.slice(0, 200) + "…" : s);
+    } catch { argsPreview = "(...)"; }
+
+    let resultHtml = "";
+    if (result && result._mock) {
+      resultHtml = escapeHtml(result.message);
+    } else {
+      try {
+        resultHtml = `<pre style="margin:0;white-space:pre-wrap;font-size:11px;max-height:200px;overflow-y:auto;">${escapeHtml(JSON.stringify(result, null, 2).slice(0,500))}</pre>`;
+      } catch { resultHtml = "(unprintable)"; }
+    }
+
+    div.innerHTML = `
+      <div class="tool-header"><span class="tool-name">🔧 ${escapeHtml(toolName)}</span></div>
+      <div class="tool-args">${argsPreview}</div>
+      <div class="tool-result ${isError?'error':'ok'}">${resultHtml}</div>`;
+    messagesEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function addThinkingEl(text) {
+    hideEmptyState();
+    const div = document.createElement("div");
+    div.style.cssText = "color:var(--text2);font-size:11px;font-style:italic;padding:4px 0";
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  // ── Conversation ──
+  async function sendMessage(userText) {
+    if (!userText.trim()) return;
+    if (isProcessing) {
+      statusEl.textContent = "⏳ 上一条任务仍在处理中，请等待完成…";
+      statusEl.classList.add("visible");
+      if (thinkTimer) { thinkStart = Date.now(); updateThinking(); }
+      return;
+    }
+    const [curProv, curModel] = modelBadge.dataset.active ? modelBadge.dataset.active.split("/") : [null, null];
+    if (attachments.length && !modelSupportsVision(curProv, curModel)) {
+      alert("当前模型不支持图片输入，附件将不会发送给 AI。建议切换到支持视觉的模型（Kimi K3 / GPT-5.6 / Claude Sonnet 5 / Gemini 3.7 Flash），或仅回复文本。");
+    }
+    isProcessing = true;
+    sendBtn.disabled = true;
+    setThinking("Thinking");
+
+    conversation.push({ role: "user", content: buildUserMessageContent(userText) });
+    addMessageEl("user", renderUserBubble(userText));
+    if (attachments.length) clearAttachments();
+    await saveHistoryEvent("user_message", {text_length: userText.length});
+
+    try {
+      await runConversationLoop();
+    } catch (err) {
+      console.error("[aifusion]", err);
+      addMessageEl("assistant", `<span style="color:var(--error)">Error: ${escapeHtml(err.message)}</span>`);
+    } finally {
+      clearThinking();
+      isProcessing = false;
+      sendBtn.disabled = false;
+      promptEl.focus();
+    }
+  }
+
+  async function runConversationLoop() {
+    const MAX_ROUNDS = 10;
+    let verifyRounds = 0;
+    const executedCalls = new Set();
+    if (!Array.isArray(conversation) || conversation.length === 0) {
+      throw new Error("当前会话上下文为空，未发送空请求。请重新输入本次 CAD 修改要求。");
+    }
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      setThinking(`Thinking (第 ${round + 1}/${MAX_ROUNDS} 轮)`);
+      // Read current provider/model from badge for each API call
+      const [prov, model] = modelBadge.dataset.active
+        ? modelBadge.dataset.active.split("/")
+        : [null, null];
+
+      const body = { messages: modelConversation() };
+      if (prov) body.provider = prov;
+      if (model) body.model = model;
+
+      const response = await apiCall("POST", "/api/chat", body);
+      const choice = response.choices?.[0];
+      if (!choice) throw new Error("No response from AI");
+
+      const msg = choice.message;
+
+      // text response
+      if (msg.content && !msg.tool_calls) {
+        conversation.push({ role: "assistant", content: msg.content });
+        addMessageEl("assistant", renderMarkdown(msg.content));
+        await saveHistoryEvent("assistant_message", {has_tool_calls: false});
+        return;
+      }
+
+      // tool calls
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        conversation.push({ role: "assistant", content: msg.content || null, tool_calls: msg.tool_calls });
+
+        for (const tc of msg.tool_calls) {
+          const toolName = tc.function.name;
+          let args;
+          try { args = JSON.parse(tc.function.arguments || "{}"); } catch { args = {}; }
+
+          const callFingerprint = `${toolName}:${JSON.stringify(args)}`;
+          if (executedCalls.has(callFingerprint)) {
+            const duplicate = {ok: false, tool: toolName, error: {code: "duplicate_tool_call", message: "The same tool call was already executed in this request; provide a different repair action."}};
+            addToolCallEl(toolName, args, duplicate, true);
+            conversation.push({role: "tool", tool_call_id: tc.id, name: toolName, content: JSON.stringify(duplicate)});
+            continue;
+          }
+          executedCalls.add(callFingerprint);
+          if (toolName === "execute" && args.featureType === "script" &&
+              (typeof args.script !== "string" || !/def\s+run\s*\(\s*_context\s*\)/.test(args.script))) {
+            const invalid = {ok: false, tool: toolName, error: {code: "invalid_script", message: "execute script must define def run(_context)."}};
+            addToolCallEl(toolName, args, invalid, true);
+            conversation.push({role: "tool", tool_call_id: tc.id, name: toolName, content: JSON.stringify(invalid)});
+            continue;
+          }
+          if (toolName === "read" && args.queryType === "document" && !args.operation) {
+            const invalid = {ok: false, tool: toolName, error: {code: "missing_operation", message: "read(document) requires operation: open, close, save, active, name, or path."}};
+            addToolCallEl(toolName, args, invalid, true);
+            conversation.push({role: "tool", tool_call_id: tc.id, name: toolName, content: JSON.stringify(invalid)});
+            continue;
+          }
+
+          setThinking(`Running ${toolName}`);
+          const thinkingEl = addThinkingEl(`Running ${toolName}...`);
+
+          let result, isError = false;
+          try { result = normalizeToolResult(toolName, await callFusionTool(toolName, args)); }
+          catch (err) { result = `Error: ${err.message}`; isError = true; }
+
+          isError = isError || result?.ok === false;
+
+          thinkingEl.remove();
+          addToolCallEl(toolName, args, result, isError);
+
+          const shot = isScreenshotResult(result);
+          conversation.push({
+            role: "tool",
+            tool_call_id: tc.id,
+            name: toolName,
+            // 截图 base64 不直接塞进 tool 消息(体积大且会污染纯文本模型), 仅保留摘要
+            content: shot
+              ? `[screenshot captured: ${result.mimeType}, base64 ${result.data.length} chars]`
+              : (typeof result === "string" ? result : JSON.stringify(result)),
+          });
+          await saveHistoryEvent("tool_result", {tool: toolName, ok: !isError});
+
+          // 视觉校验:截图结果 → 以带图 user 消息注入(仅视觉模型, 且限制轮数)
+          if (shot && modelSupportsVision(prov, model) && visionCheckEnabled() &&
+              verifyRounds < VISION_MAX_ROUNDS) {
+            verifyRounds++;
+            conversation.push({ role: "user", content: buildVisionCheckMessage(result) });
+            addMessageEl("assistant", `<div style="color:var(--text2);font-size:11px;font-style:italic">🔍 已获取设计截图，模型开始视觉校验（${verifyRounds}/${VISION_MAX_ROUNDS}）…</div>`);
+          }
+        }
+        setThinking("Thinking");
+        continue;
+      }
+
+      if (msg.content) {
+        conversation.push({ role: "assistant", content: msg.content });
+        addMessageEl("assistant", renderMarkdown(msg.content));
+        await saveHistoryEvent("assistant_message", {has_tool_calls: false});
+        return;
+      }
+      throw new Error("Empty response");
+    }
+
+    // max rounds
+    if (!conversation.length) {
+      throw new Error("CAD 会话上下文为空，无法生成总结。");
+    }
+    conversation.push({ role: "user", content: "Please summarize what you've done." });
+    const final = await apiCall("POST", "/api/chat", { messages: modelConversation() });
+    const c = final.choices?.[0]?.message?.content || "Done.";
+    conversation.push({ role: "assistant", content: c });
+    addMessageEl("assistant", renderMarkdown(c));
+    await saveHistoryEvent("loop_limit_summary", {});
+  }
+
+  // ── Settings / Provider UI ──
+  function getCurrProvider() { return document.getElementById("cfg-provider").value; }
+
+  function updateModelSelect() {
+    const pid = getCurrProvider();
+    const sel  = document.getElementById("cfg-model");
+    sel.innerHTML = "";
+
+    const pmeta = providersMeta[pid];
+    if (pmeta && pmeta.models) {
+      const currentModel = window._currentModel || pmeta.models[0];
+      pmeta.models.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m; opt.textContent = m;
+        if (m === currentModel) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+  }
+
+  function updateProviderInfoRow() {
+    const pid   = getCurrProvider();
+    const pmeta = providersMeta[pid];
+    const row   = document.getElementById("cfg-info");
+    if (!pmeta) { row.innerHTML = ""; return; }
+
+    const configured = pmeta.configured;
+    const visionOK = modelSupportsVision(pid, document.getElementById("cfg-model").value || (pmeta.models || [])[0]) && visionCheckEnabled();
+    row.innerHTML = `
+      <span class="dot ${configured ? 'ok' : 'missing'}"></span>
+      <span>${configured ? 'API key configured ✓' : 'No API key set — enter key below'}</span>
+      ${visionOK ? '<span class="vision-badge">👁️ 支持视觉校验</span>'
+                 : '<span class="vision-badge dim">视觉校验不可用（当前模型/开关）</span>'}
+    `;
+  }
+
+  function updateApiKeyField() {
+    const pid   = getCurrProvider();
+    const pmeta = providersMeta[pid];
+    const label = document.getElementById("cfg-apikey-label");
+    const input = document.getElementById("cfg-apikey");
+    const baseurl = document.getElementById("cfg-baseurl");
+
+    if (pmeta) {
+      label.textContent = `${pmeta.label} API Key`;
+      input.placeholder = pid === "anthropic" ? "sk-ant-..." : pid === "google_gemini" ? "AIza..." : "sk-...";
+      if (pmeta.base_url) baseurl.value = pmeta.base_url;
+    }
+  }
+
+  async function loadSettings() {
+    try {
+      const cfg = await apiCall("GET", "/api/config");
+      const modelsInfo = await apiCall("GET", "/api/models");
+      providersMeta = modelsInfo.providers || {};
+
+      window._currentModel = cfg.model || "";
+
+      // Resolve default provider: config > auto-detected (sole configured) > hard-coded
+      const defaultPid = cfg.provider || modelsInfo.default_provider || "deepseek";
+
+      // Populate provider dropdown
+      const provSel = document.getElementById("cfg-provider");
+      provSel.innerHTML = "";
+      Object.entries(providersMeta).forEach(([pid, pmeta]) => {
+        const opt = document.createElement("option");
+        opt.value = pid;
+        opt.textContent = pmeta.label;
+        if (pid === defaultPid) opt.selected = true;
+        provSel.appendChild(opt);
+      });
+
+      updateModelSelect();
+      updateProviderInfoRow();
+      updateApiKeyField();
+
+      // Load API key (from config for current provider)
+      const pid = getCurrProvider();
+      const pmeta = providersMeta[pid];
+      if (pmeta) {
+        const cfgKey = pmeta.config_key || `${pid}_api_key`;
+        const savedKey = cfg[cfgKey] || "";
+        // The server only returns a redacted marker. Keep it in the field so
+        // saving a model change lets the server preserve the real key, but do
+        // not treat it as a new credential in the browser.
+        document.getElementById("cfg-apikey").value = savedKey;
+        document.getElementById("cfg-apikey").placeholder = savedKey.startsWith("***")
+          ? "已配置 API Key（无需重新输入）"
+          : (pid === "anthropic" ? "sk-ant-..." : pid === "google_gemini" ? "AIza..." : "sk-...");
+      }
+
+      document.getElementById("cfg-system-prompt").value = cfg.system_prompt || "";
+
+    } catch (e) {
+      console.warn("[aifusion] Could not load settings:", e);
+    }
+  }
+
+  async function saveSettings() {
+    const pid     = getCurrProvider();
+    const pmeta   = providersMeta[pid];
+    const cfgKey  = pmeta ? (pmeta.config_key || `${pid}_api_key`) : `${pid}_api_key`;
+    const model   = document.getElementById("cfg-model").value;
+
+    const updates = {
+      provider: pid,
+      model: model,
+      system_prompt: document.getElementById("cfg-system-prompt").value,
+    };
+    updates[cfgKey] = document.getElementById("cfg-apikey").value;
+    updates[`${pid}_base_url`] = document.getElementById("cfg-baseurl").value;
+
+    try {
+      await apiCall("POST", "/api/config", updates);
+      settingsEl.classList.remove("open");
+
+      // Update badge
+      const label = pmeta ? pmeta.label : pid;
+      modelBadge.textContent = `⚙ ${label}/${model}`;
+      modelBadge.dataset.active = `${pid}/${model}`;
+      modelBadge.classList.toggle("configured", !!updates[cfgKey]);
+
+      // Provider changes are part of the same resumable session; do not erase
+      // the conversation as the previous implementation did.
+      await saveHistoryEvent("settings_changed", {provider: pid, model});
+    } catch (err) { alert("Failed to save: " + err.message); }
+  }
+
+  // ── Event handlers ──
+  formEl.addEventListener("submit", e => {
+    e.preventDefault();
+    const text = promptEl.value.trim();
+    if (!text || isProcessing) return;
+    promptEl.value = "";
+    promptEl.style.height = "auto";
+    sendMessage(text);
+  });
+
+  promptEl.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); formEl.dispatchEvent(new Event("submit")); }
+  });
+  promptEl.addEventListener("input", () => {
+    promptEl.style.height = "auto";
+    promptEl.style.height = Math.min(promptEl.scrollHeight, 120) + "px";
+  });
+
+  modelBadge.addEventListener("click", () => {
+    settingsEl.classList.toggle("open");
+    if (settingsEl.classList.contains("open")) loadSettings();
+  });
+
+  document.getElementById("cfg-provider").addEventListener("change", () => {
+    updateModelSelect();
+    updateProviderInfoRow();
+    updateApiKeyField();
+    // Reload config to show the right API key
+    (async () => {
+      try {
+        const cfg = await apiCall("GET", "/api/config");
+        const pid = getCurrProvider();
+        const pmeta = providersMeta[pid];
+        const cfgKey = pmeta ? (pmeta.config_key || `${pid}_api_key`) : `${pid}_api_key`;
+        const savedKey = cfg[cfgKey] || "";
+        document.getElementById("cfg-apikey").value = savedKey;
+        document.getElementById("cfg-apikey").placeholder = savedKey.startsWith("***")
+          ? "已配置 API Key（无需重新输入）"
+          : "请输入 API Key";
+      } catch {}
+    })();
+  });
+
+  document.getElementById("settings-cancel").addEventListener("click", () => settingsEl.classList.remove("open"));
+  document.getElementById("settings-save").addEventListener("click", saveSettings);
+
+  document.getElementById("history-btn").addEventListener("click", async () => {
+    const panel = document.getElementById("history-panel");
+    panel.classList.toggle("open");
+    settingsEl.classList.remove("open");
+    if (panel.classList.contains("open")) await refreshHistory();
+  });
+  document.getElementById("history-project").addEventListener("change", async (e) => {
+    historyProject = historyProjects.find(p => p.id === e.target.value);
+    historyProject.sessions = (await apiCall("GET", `/api/projects/${historyProject.id}/sessions`)).sessions || [];
+    historySession = historyProject.sessions[0] || null;
+    renderHistorySelectors();
+    if (historySession) await restoreHistory();
+  });
+  document.getElementById("history-session").addEventListener("change", (e) => {
+    historySession = historyProject?.sessions.find(s => s.id === e.target.value) || null;
+  });
+  document.getElementById("history-restore").addEventListener("click", () => restoreHistory(true));
+  document.getElementById("history-new-project").addEventListener("click", async () => {
+    const name = prompt("项目名称", "Fusion design");
+    if (!name) return;
+    const created = await apiCall("POST", "/api/projects", {name});
+    const session = (await apiCall("POST", `/api/projects/${created.project.id}/sessions`, {title: "Main design session"})).session;
+    created.project.sessions = [session];
+    historyProjects.unshift(created.project); historyProject = created.project; historySession = session;
+    renderHistorySelectors(); conversation = []; messagesEl.querySelectorAll(".msg, .tool-call").forEach(el => el.remove()); if (emptyState) emptyState.style.display = "";
+  });
+  document.getElementById("history-new-session").addEventListener("click", async () => {
+    if (!historyProject) return;
+    const session = (await apiCall("POST", `/api/projects/${historyProject.id}/sessions`, {title: `Design session ${new Date().toLocaleString()}`})).session;
+    historyProject.sessions.unshift(session); historySession = session; renderHistorySelectors();
+    conversation = []; messagesEl.querySelectorAll(".msg, .tool-call").forEach(el => el.remove()); if (emptyState) emptyState.style.display = "";
+  });
+
+  // ── Init ──
+  async function init() {
+    try {
+      // Restore vision-check toggle from localStorage
+      const vc = document.getElementById("cfg-vision-check");
+      if (vc) vc.checked = localStorage.getItem("aifusion_vision") !== "0";
+      vc?.addEventListener("change", () => {
+        localStorage.setItem("aifusion_vision", vc.checked ? "1" : "0");
+        updateProviderInfoRow();
+      });
+      document.getElementById("cfg-model")?.addEventListener("change", () => updateProviderInfoRow());
+
+      // Attachment controls
+      document.getElementById("attach-btn")?.addEventListener("click", () => document.getElementById("attach-input")?.click());
+      document.getElementById("attach-input")?.addEventListener("change", (e) => {
+        handleAttachFiles(e.target.files);
+        e.target.value = "";
+      });
+
+      const modelsInfo = await apiCall("GET", "/api/models");
+      providersMeta = modelsInfo.providers || {};
+
+      // Priority: config.stored_provider > auto-detected (sole configured) > hard-coded
+      const defaultPid = modelsInfo.default_provider || "deepseek";
+      const configuredCount = modelsInfo.configured_count || 0;
+
+      // If only one provider has a key, auto-select it regardless of cfg.provider
+      let pid;
+      if (configuredCount === 1 && defaultPid) {
+        pid = defaultPid;  // sole configured provider wins
+      } else {
+        pid = defaultPid;  // use whatever resolution gave us
+      }
+
+      const pmeta = providersMeta[pid] || {};
+      const model = pmeta.models ? pmeta.models[0] : "";
+      const label = pmeta.label || pid;
+      const configured = pmeta.configured || false;
+
+      modelBadge.textContent = configured
+        ? `⚙ ${label}/${model}`
+        : `⚙ ${configuredCount === 0 ? "No API key set" : label + "/" + model}`;
+      modelBadge.dataset.active = `${pid}/${model}`;
+      modelBadge.classList.toggle("configured", configured);
+      // History is a workspace state: open it and restore the latest session
+      // automatically whenever the Fusion Palette starts.
+      document.getElementById("history-panel").classList.add("open");
+      await refreshHistory();
+    } catch (e) {
+      console.warn("[aifusion] Init failed:", e);
+    }
+  }
+  init();
+})();
+</script>
+</body>
+</html>

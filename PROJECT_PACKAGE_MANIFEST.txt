@@ -1,0 +1,42 @@
+AIFusion final project package
+Generated: 2026-08-20T10:20:14Z
+
+Includes latest AIFusion source, Fusion add-in files, local server, UI, history persistence, tests, specs and installers.
+Excluded for safety: local_server/config.json (may contain API keys), runtime logs, local history database, .git metadata and caches.
+
+Files:
+.gitignore
+AIFusion.manifest
+AIFusion.py
+LICENSE
+README.html
+README.md
+README.zh-CN.md
+bridge/__init__.pyc
+bridge/palette.pyc
+bridge/selection_watcher.pyc
+handlers/__init__.pyc
+handlers/_common.pyc
+handlers/api_documentation.pyc
+handlers/create.pyc
+handlers/delete.pyc
+handlers/execute.pyc
+handlers/read.pyc
+handlers/update.pyc
+install.bat
+install_deps.bat
+local_server/__init__.py
+local_server/chat_ui.html
+local_server/config.example.json
+local_server/history_store.py
+local_server/requirements.txt
+local_server/server.py
+package.json
+resources/palette.html
+specs/cad-execution-contract/document.md
+specs/project-history/document.md
+specs/runtime-hardening/document.md
+specs/spec.md
+specs/verification-testability/document.md
+tests/test_server.py
+tools/setup_config.ps1

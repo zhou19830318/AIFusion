@@ -1,0 +1,7 @@
+{
+  "name": "aifusion-addon",
+  "private": true,
+  "scripts": {
+    "build:local": "python3 -m py_compile AIFusion.py local_server/server.py local_server/history_store.py tests/test_server.py"
+  }
+}
