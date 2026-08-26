@@ -1,8 +1,8 @@
 @echo off
 rem ---------------------------------------------------------
-rem  Fusion360-Add-Ins (AI Fusion) - One-click Installer
+rem  AIFusion - One-click Installer for Fusion 360
 rem ---------------------------------------------------------
-title Fusion360-Add-Ins (AI Fusion) - One-click Installer
+title AIFusion - One-click Installer
 
 setlocal enabledelayedexpansion
 
@@ -13,7 +13,7 @@ if defined APPDATA (
   set "ADDINS=%USERPROFILE%\AppData\Roaming\Autodesk\Autodesk Fusion 360\API\AddIns"
 )
 if not exist "%ADDINS%" mkdir "%ADDINS%"
-set "TARGET=%ADDINS%\Fusion360-Add-Ins"
+set "TARGET=%ADDINS%\AIFusion"
 
 rem Current directory (script location)
 set "CURRENT=%~dp0"
@@ -47,7 +47,7 @@ if defined FOUND (
 )
 echo.
 
-rem ---- Ensure Python dependencies ----
+rem ---- Ensure Python & dependencies ----
 echo [3/4] Checking Python & dependencies...
 where python >nul 2>nul
 if %errorlevel%==0 (
@@ -74,7 +74,7 @@ echo ============================================================
 echo.
 echo   Steps to use:
 echo   1. Open Fusion 360.
-echo   2. Press Shift+S, go to Add-Ins, enable "Fusion360-Add-Ins".
+echo   2. Press Shift+S, go to Add-Ins, enable "AIFusion".
 echo        Set "Run on Startup" if desired.
 echo   3. Enter your API key (if prompted).
 echo.
