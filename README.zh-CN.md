@@ -116,7 +116,7 @@ install_deps.bat
 ### 4. 在 Fusion 360 中启用
 
 1. 完全退出并重启 Fusion 360
-2. 按 `Shift+S` → **Add-Ins** 标签页 → 找到 **Fusion360-Add-Ins**
+2. 按 `Shift+S` → **Add-Ins** 标签页 → 找到 **AIFusion**
 3. 点击 **Run**，勾选 **Run on Startup**
 4. 面板停靠在右侧
 
