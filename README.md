@@ -1,8 +1,8 @@
-# Fusion360-Add-Ins — AI Copilot for Autodesk Fusion 360
+# AIFusion — AI Copilot for Autodesk Fusion 360
 
 **[English](README.md) · [中文](README.zh-CN.md)**
 
-Fusion360-Add-Ins (AI Fusion) is a **native Fusion 360 add-in** that embeds a docked AI chat palette directly inside Fusion. Describe what you want to build in natural language — the AI drives the Fusion API for you: sketching, modelling, editing features, and verifying the result through viewport screenshots.
+AIFusion is a **native Fusion 360 add-in** that embeds a docked AI chat palette directly inside Fusion. Describe what you want to build in natural language — the AI drives the Fusion API for you: sketching, modelling, editing features, and verifying the result through viewport screenshots.
 
 [Visit my blog](https://blog.csdn.net/acldy833/article/details/163825853?sharetype=blogdetail&sharerId=163825853&sharerefer=PC&sharesource=acldy833&spm=1011.2480.3001.8118)
 
