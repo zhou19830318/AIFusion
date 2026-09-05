@@ -50,7 +50,7 @@ AIFusio是 **Fusion 360 原生插件**，在 Fusion 内部嵌入一个停靠式 
 1. 从 GitHub 下载 ZIP 并解压到任意位置（如桌面）
 2. **双击 `install.bat`**
 3. 按提示**粘贴你的 DeepSeek API Key**（直接回车 = 跳过，稍后在 Fusion 面板设置里再填）
-4. 完全退出并重启 Fusion 360 → 按 `Shift+S` → **Add-Ins** → **Fusion360-Add-Ins** → **Run** → 勾选 **Run on Startup**
+4. 完全退出并重启 Fusion 360 → 按 `Shift+S` → **Add-Ins** → **AIFusion** → **Run** → 勾选 **Run on Startup**
 
 脚本会自动完成：
 
