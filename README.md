@@ -48,7 +48,7 @@ AIFusion is a **native Fusion 360 add-in** that embeds a docked AI chat palette 
 1. Download the ZIP from GitHub and extract it anywhere (e.g. your Desktop)
 2. Double-click **`install.bat`**
 3. When asked, **paste your DeepSeek API Key** (or press Enter to skip and add it later in the Fusion palette settings)
-4. Fully restart Fusion 360 → `Shift+S` → **Add-Ins** → **Fusion360-Add-Ins** → **Run** → tick **Run on Startup**
+4. Fully restart Fusion 360 → `Shift+S` → **Add-Ins** → **AIFusion** → **Run** → tick **Run on Startup**
 
 The script automatically:
 
