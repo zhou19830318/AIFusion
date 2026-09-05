@@ -64,12 +64,12 @@ AIFusio是 **Fusion 360 原生插件**，在 Fusion 内部嵌入一个停靠式 
 
 ```powershell
 # 从 GitHub 克隆
-git clone https://github.com/zhou19830318/Fusion360-Add-Ins.git "$env:APPDATA\Autodesk\Autodesk Fusion 360\API\AddIns\Fusion360-Add-Ins"
+git clone https://github.com/zhou19830318/AIFusion.git "$env:APPDATA\Autodesk\Autodesk Fusion 360\API\AddIns\AIFusion"
 ```
 
 或下载 ZIP 解压到：
 ```
-%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\Fusion360-Add-Ins\
+%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\AIFusion\
 ```
 
 ### 2. 安装依赖
@@ -77,7 +77,7 @@ git clone https://github.com/zhou19830318/Fusion360-Add-Ins.git "$env:APPDATA\Au
 **以管理员身份运行：**
 
 ```batch
-cd "%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\Fusion360-Add-Ins"
+cd "%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\AIFusion"
 install_deps.bat
 ```
 
@@ -123,7 +123,7 @@ install_deps.bat
 ## 项目结构
 
 ```
-Fusion360-Add-Ins/
+AIFusion/
 ├── AIFusion.py                  # 插件入口（由 Fusion 加载）
 ├── AIFusion.manifest            # Fusion 插件清单
 ├── install_deps.bat             # 依赖安装脚本（运行一次）
@@ -280,7 +280,7 @@ DeepSeek 官方 API 仅支持文本。当前版本已自动剥离图片（旧版
 1. 退出 Fusion 360
 2. 删除目录：
    ```
-   %APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\Fusion360-Add-Ins
+   %APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\AIFusion
    ```
 3. 重启 Fusion 360
 
