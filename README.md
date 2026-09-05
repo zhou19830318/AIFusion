@@ -114,7 +114,7 @@ Open `local_server\config.json` and add at least one API key:
 ### 4. Enable in Fusion 360
 
 1. Fully quit Fusion 360 and restart
-2. Press `Shift+S` → **Add-Ins** tab → find **Fusion360-Add-Ins**
+2. Press `Shift+S` → **Add-Ins** tab → find **AIFusion**
 3. Click **Run**, then tick **Run on Startup**
 4. The palette appears docked on the right side
 
