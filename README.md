@@ -62,12 +62,12 @@ The script automatically:
 
 ```powershell
 # Clone from GitHub
-git clone https://github.com/zhou19830318/Fusion360-Add-Ins.git "$env:APPDATA\Autodesk\Autodesk Fusion 360\API\AddIns\Fusion360-Add-Ins"
+git clone https://github.com/zhou19830318/AIFusion.git "$env:APPDATA\Autodesk\Autodesk Fusion 360\API\AddIns\AIFusion"
 ```
 
 Or download the ZIP and extract to:
 ```
-%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\Fusion360-Add-Ins\
+%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\AIFusion\
 ```
 
 ### 2. Install Dependencies
@@ -75,7 +75,7 @@ Or download the ZIP and extract to:
 **Run as Administrator:**
 
 ```batch
-cd "%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\Fusion360-Add-Ins"
+cd "%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\AIFusion"
 install_deps.bat
 ```
 
@@ -121,7 +121,7 @@ Open `local_server\config.json` and add at least one API key:
 ## Project Structure
 
 ```
-Fusion360-Add-Ins/
+AIFusion/
 ├── AIFusion.py                  # Add-in entry point (loaded by Fusion)
 ├── AIFusion.manifest            # Fusion add-in manifest
 ├── install_deps.bat             # Dependency installer (run once)
@@ -244,7 +244,7 @@ The system prompt contains verified Fusion API signatures. If you encounter an e
 1. Quit Fusion 360
 2. Delete the folder:
    ```
-   %APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\Fusion360-Add-Ins
+   %APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\AIFusion
    ```
 3. Restart Fusion 360
 
