@@ -640,7 +640,11 @@
       return `${userText}\n\n[附件提示] 用户附带了 ${attachments.length} 个附件（${names}），但当前模型 ${model || "未知"} 不支持图片输入，附件内容未发送。如需让 AI 查看图片，请切换到支持视觉的模型（Kimi K3 / GPT-5.6 / Claude Sonnet 5 / Gemini 3.7 Flash）。`;
     }
     return [
-      ...attachments.map(a => ({ type: "image_url", image_url: { url: a.dataUrl } })),
+      // PDF 附件带上文件名:OpenAI 的 file 内容块需要 filename 字段(服务端
+      // 按 provider 适配,其它 provider 会把 PDF 转为文字提示)。
+      ...attachments.map(a => a.mime === "application/pdf"
+        ? { type: "image_url", image_url: { url: a.dataUrl }, _filename: a.name }
+        : { type: "image_url", image_url: { url: a.dataUrl } }),
       { type: "text", text: userText },
     ];
   }

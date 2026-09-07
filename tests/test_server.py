@@ -381,6 +381,113 @@ class ServerTests(unittest.TestCase):
         body = post_mock.call_args.kwargs["json_body"]
         self.assertEqual(body["temperature"], 0.2)
 
+    # ── Vendor-doc research: attachment handling per provider ──────────
+
+    def test_anthropic_pdf_data_url_becomes_document_block(self):
+        converted, _ = server._anthropic_convert_messages([
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": "data:application/pdf;base64,JVBERi0="}},
+                {"type": "text", "text": "summarize"},
+            ]},
+        ])
+        blocks = converted[0]["content"]
+        doc = [b for b in blocks if b.get("type") == "document"]
+        self.assertEqual(len(doc), 1)
+        self.assertEqual(doc[0]["source"]["media_type"], "application/pdf")
+        self.assertEqual(doc[0]["source"]["data"], "JVBERi0=")
+
+    def test_anthropic_image_media_types_normalized(self):
+        for mime, expect in (("image/jpg", "image/jpeg"), ("image/png", "image/png"), ("image/webp", "image/webp")):
+            converted, _ = server._anthropic_convert_messages([
+                {"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,QQ=="}},
+                ]},
+            ])
+            img = converted[0]["content"][0]
+            self.assertEqual(img["type"], "image")
+            self.assertEqual(img["source"]["media_type"], expect)
+
+    def test_anthropic_unsupported_media_type_becomes_notice(self):
+        # e.g. image/bmp or image/heic: Anthropic documents only
+        # jpeg/png/gif/webp — an unknown type must not 400 the whole request.
+        converted, _ = server._anthropic_convert_messages([
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": "data:image/bmp;base64,QQ=="}},
+                {"type": "text", "text": "describe"},
+            ]},
+        ])
+        blocks = converted[0]["content"]
+        self.assertTrue(all(b.get("type") != "image" for b in blocks))
+        self.assertIn("does not accept this file type", blocks[0]["text"])
+        self.assertIn("describe", blocks[1]["text"])
+
+    def test_openai_provider_gets_file_part_for_pdf(self):
+        adapted = server._adapt_attachments_for_openai_provider("openai", [
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": "data:application/pdf;base64,JVBERi0="}, "_filename": "spec.pdf"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,QQ=="}},
+                {"type": "text", "text": "review both"},
+            ]},
+        ])
+        parts = adapted[0]["content"]
+        self.assertEqual(parts[0]["type"], "file")
+        self.assertEqual(parts[0]["file"]["file_data"], "data:application/pdf;base64,JVBERi0=")
+        self.assertEqual(parts[0]["file"]["filename"], "spec.pdf")
+        self.assertEqual(parts[1]["type"], "image_url")  # images untouched
+        self.assertEqual(parts[2]["type"], "text")
+
+    def test_kimi_and_gemini_pdf_becomes_notice_not_raw_base64(self):
+        # Kimi/Gemini/GLM document only image_url parts; an inline PDF must be
+        # replaced by a notice instead of being sent as an image_url.
+        for pid in ("kimi", "google_gemini", "zhipu", "deepseek"):
+            adapted = server._adapt_attachments_for_openai_provider(pid, [
+                {"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": "data:application/pdf;base64,JVBERi0="}, "_filename": "doc.pdf"},
+                ]},
+            ])
+            part = adapted[0]["content"][0]
+            self.assertEqual(part["type"], "text", pid)
+            self.assertIn("does not accept inline PDF", part["text"])
+            self.assertNotIn("JVBERi0", part["text"])  # raw base64 must not leak into context
+
+    def test_pdf_attachment_size_cap_larger_than_images(self):
+        big_pdf = "data:application/pdf;base64," + "A" * (server._MAX_PDF_CHARS + 1)
+        with self.assertRaises(ValueError):
+            server._validate_chat_payload({"messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": big_pdf}},
+            ]}]})
+        # just under the cap passes (mind the "data:application/pdf;base64," prefix)
+        prefix = "data:application/pdf;base64,"
+        ok_pdf = prefix + "A" * (server._MAX_PDF_CHARS - len(prefix) - 1)
+        messages, _t, _tc = server._validate_chat_payload({"messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": ok_pdf}},
+        ]}]})
+        self.assertEqual(len(messages), 1)
+
+    def test_chat_routes_pdf_through_openai_file_part_end_to_end(self):
+        captured = {}
+
+        def fake_call(**kwargs):
+            captured.update(kwargs)
+            return 200, {"choices": [{"message": {"content": "ok"}}]}
+
+        with patch.object(server, "load_config", return_value=dict(server.DEFAULT_CONFIG)), \
+             patch.object(server, "_openai_compatible_call", side_effect=fake_call):
+            response = self.client.post("/api/chat", json={
+                "messages": [{"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": "data:application/pdf;base64,JVBERi0="}, "_filename": "a.pdf"},
+                    {"type": "text", "text": "read this"},
+                ]}],
+                "provider": "openai",
+                "model": "gpt-5.6-sol",
+                "api_key": "sk-test",
+            })
+        self.assertEqual(response.status_code, 200)
+        user_msg = [m for m in captured["messages"] if m["role"] == "user"][0]
+        sent = user_msg["content"]
+        self.assertEqual(sent[0]["type"], "file")
+        self.assertEqual(sent[0]["file"]["filename"], "a.pdf")
+
 
 if __name__ == "__main__":
     unittest.main()

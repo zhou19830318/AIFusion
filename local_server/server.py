@@ -50,6 +50,10 @@ _MAX_SCRIPT_CHARS = 120_000
 # 120K chars of base64 ≈ a ~88 KB screenshot — counting it fully would reject
 # any vision round.  Kept well below Anthropic's ~5 MB per-image limit.
 _MAX_IMAGE_CHARS = 6_000_000
+# PDF documents get a larger per-file cap: OpenAI reads them natively (file part,
+# 100 MB/page limits) and Anthropic accepts base64 documents up to 32 MB — well
+# above our 32 MB request-body cap, so 12M chars (~9 MB binary) is a safe bound.
+_MAX_PDF_CHARS = 12_000_000
 _CONNECT_TIMEOUT = 10
 _READ_TIMEOUT = 180
 _MAX_PROVIDER_RETRIES = 2
@@ -379,10 +383,15 @@ def _validate_chat_payload(payload: Any) -> tuple[list[dict[str, Any]], list[dic
                 if isinstance(part, dict) and part.get("type") == "image_url":
                     url = ((part.get("image_url") or {}).get("url")) or ""
                     if url.startswith("data:"):
-                        if len(url) > _MAX_IMAGE_CHARS:
+                        # PDFs get a larger per-file cap than images: OpenAI reads
+                        # them natively (≤100 pages/file) and Anthropic accepts
+                        # base64 documents up to 32 MB; 12M chars ≈ 9 MB binary.
+                        _is_pdf = url.startswith("data:application/pdf")
+                        _limit = _MAX_PDF_CHARS if _is_pdf else _MAX_IMAGE_CHARS
+                        if len(url) > _limit:
                             raise ValueError(
-                                f"image attachment exceeds {_MAX_IMAGE_CHARS} characters; "
-                                "attach a smaller image or downscale it"
+                                f"{'PDF' if _is_pdf else 'image'} attachment exceeds {_limit} characters; "
+                                "attach a smaller file or split it"
                             )
                         # base64 image data is binary; charge a nominal text budget
                         total_chars += 512
@@ -496,6 +505,46 @@ def _host_of(url: str) -> str:
         return ""
 
 
+_PDF_NO_INLINE_SUPPORT_NOTICE = (
+    "[PDF attachment{name} was not sent: {label}'s API does not accept inline PDF "
+    "documents. Convert it to images (PNG/JPEG) and attach those instead.]"
+)
+
+
+def _adapt_attachments_for_openai_provider(provider_id: str, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per-provider adaptation of PDF attachments on OpenAI-format endpoints.
+
+    OpenAI's /v1/chat/completions natively reads PDFs via a `file` content part
+    (base64 data URL in file.file_data, ≤100 pages/file).  The other
+    OpenAI-compatible endpoints we route to (Kimi, Zhipu GLM, Gemini,
+    DeepSeek) document only `image_url` image parts — an inline PDF would
+    either be rejected or silently ignored, so it is replaced by a notice.
+    """
+    def convert(provider_id: str, part: Any) -> Any:
+        if not isinstance(part, dict) or part.get("type") != "image_url":
+            return part
+        url = ((part.get("image_url") or {}).get("url")) or ""
+        if not url.startswith("data:application/pdf"):
+            return part
+        if provider_id == "openai":
+            file_part: dict[str, Any] = {"type": "file", "file": {"file_data": url}}
+            filename = part.get("_filename")
+            if filename:
+                file_part["file"]["filename"] = str(filename)
+            return file_part
+        label = PROVIDERS[provider_id]["label"]
+        detail = f" ({part.get('_filename')})" if part.get("_filename") else ""
+        return {"type": "text", "text": _PDF_NO_INLINE_SUPPORT_NOTICE.format(label=label, name=detail)}
+
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if m.get("role") == "user" and isinstance(m.get("content"), list):
+            out.append({**m, "content": [convert(provider_id, p) for p in m["content"]]})
+        else:
+            out.append(m)
+    return out
+
+
 def _strip_unsupported_images(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     """纵深防御:把 user 消息中的图片附件替换为文本提示(供纯文本模型调用时防御 400)。"""
     changed = 0
@@ -522,6 +571,36 @@ def _strip_unsupported_images(messages: list[dict[str, Any]]) -> tuple[list[dict
 # Converts OpenAI-format messages+tools → Anthropic Messages API format,
 # and converts the response back to OpenAI format so the chat UI
 # does not need to know about provider-specific formats.
+
+# Media types Anthropic accepts for base64 `image` blocks (per their vision docs:
+# image/jpeg, image/png, image/gif, image/webp — ≤5 MB per image, ≤8000 px long edge).
+_ANTHROPIC_IMAGE_MEDIA_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+# Replaces attachments the target provider cannot ingest, instead of failing the
+# whole request with a 400 and killing the repair loop.
+_UNSUPPORTED_ATTACHMENT_NOTICE = (
+    "[Attachment not sent: the current provider/model does not accept this file type "
+    "({media_type}). Convert it to PNG/JPEG and attach it again.]"
+)
+
+
+def _anthropic_data_url_to_block(url: str) -> dict[str, Any]:
+    """Convert a data: URL attachment into an Anthropic content block.
+
+    - application/pdf → `document` block (Anthropic PDF support: ≤32 MB, ≤100 pages)
+    - jpeg/png/gif/webp → `image` block, with the media_type normalized to the
+      documented set (Anthropic rejects unknown types such as image/bmp or image/heic)
+    - anything else → a text notice so the request still goes through
+    """
+    meta, _, b64data = url.partition(",")
+    media_type = meta[5:].split(";")[0].strip().lower() or "image/png"
+    if media_type == "application/pdf":
+        return {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64data}}
+    if media_type in _ANTHROPIC_IMAGE_MEDIA_TYPES:
+        if media_type == "image/jpg":  # canonical MIME is image/jpeg
+            media_type = "image/jpeg"
+        return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64data}}
+    return {"type": "text", "text": _UNSUPPORTED_ATTACHMENT_NOTICE.format(media_type=media_type)}
+
 
 def _as_anthropic_blocks(content: Any) -> list[dict[str, Any]]:
     """Normalize message content to Anthropic content blocks for merging."""
@@ -581,13 +660,7 @@ def _anthropic_convert_messages(openai_messages: list[dict[str, Any]]) -> tuple[
                     if part.get("type") == "image_url":
                         url = (part.get("image_url") or {}).get("url", "")
                         if url.startswith("data:"):
-                            meta, _, b64data = url.partition(",")
-                            media_type = meta[5:].split(";")[0] or "image/png"
-                            if media_type == "application/pdf":
-                                # PDF 附件 → Anthropic document block
-                                blocks.append({"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64data}})
-                            else:
-                                blocks.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64data}})
+                            blocks.append(_anthropic_data_url_to_block(url))
                         else:
                             blocks.append({"type": "image", "source": {"type": "url", "url": url}})
                     else:
@@ -961,6 +1034,13 @@ def create_app() -> Flask:
         # 纵深防御:当前模型不支持视觉时,剥离 user 消息中的图片附件(防厂商 400)
         if not _model_has_vision(prov, model):
             messages, _stripped = _strip_unsupported_images(messages)
+
+        # Per-provider attachment adaptation (researched against each vendor's
+        # API docs): PDFs ride the native `file` part on OpenAI; other
+        # OpenAI-compatible endpoints only accept image_url parts, so PDFs
+        # become a notice there. Anthropic conversion handles its own rules.
+        if api_format == "openai":
+            messages = _adapt_attachments_for_openai_provider(provider_id, messages)
 
         # Sampling temperature: deterministic CAD script generation benefits from
         # low temperature.  Resolution: payload > config ("0.2" default);
