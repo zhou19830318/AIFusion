@@ -21,6 +21,8 @@
     --error: #e0556a;
     --success: #4caf93;
     --radius: 10px;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    --header-h: 44px;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,14 +38,14 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  #app { display: flex; flex-direction: column; height: 100%; }
+  #app { display: flex; flex-direction: column; height: 100%; position: relative; }
 
   #header {
     display: flex; align-items: center; gap: 8px;
     padding: 8px 12px; background: var(--surface);
     border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
-  #header svg { width: 22px; height: 22px; flex-shrink: 0; }
+  #header .logo { width: 26px; height: 26px; flex-shrink: 0; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.45)); }
   #header .title { font-weight: 600; font-size: 13px; }
   #header .badge {
     margin-left: auto; font-size: 10px; padding: 2px 8px;
@@ -53,8 +55,8 @@
   }
   #header .badge:hover { background: var(--border); }
   #header .badge.configured { color: var(--success); border-color: var(--success); }
-  #history-btn { background: transparent; color: var(--text2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; cursor: pointer; font-size: 11px; }
-  #history-btn:hover { color: var(--text); border-color: var(--accent); }
+  #history-btn, #clear-btn { background: transparent; color: var(--text2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; cursor: pointer; font-size: 11px; }
+  #history-btn:hover, #clear-btn:hover { color: var(--text); border-color: var(--accent); }
 
   #messages {
     flex: 1; overflow-y: auto; padding: 12px;
@@ -81,28 +83,52 @@
   }
   .msg.assistant .bubble p { margin: 0 0 6px; }
   .msg.assistant .bubble p:last-child { margin-bottom: 0; }
+  .msg.assistant .bubble h2, .msg.assistant .bubble h3, .msg.assistant .bubble h4 { font-size: 13px; margin: 8px 0 4px; color: var(--accent2); }
+  .msg.assistant .bubble ul, .msg.assistant .bubble ol { margin: 2px 0 6px 18px; }
+  .msg.assistant .bubble li { margin: 1px 0; }
   .msg.assistant .bubble code { background: var(--surface2); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
   .msg.assistant .bubble pre { background: var(--surface2); padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 11px; margin: 6px 0; }
 
   .tool-call {
-    align-self: flex-start; max-width: 94%;
+    align-self: flex-start; max-width: 96%;
     background: var(--tool-bg); border: 1px solid var(--tool-border);
-    border-radius: var(--radius); padding: 8px 10px; font-size: 12px;
+    border-radius: var(--radius); font-size: 12px; overflow: hidden;
   }
-  .tool-call .tool-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-  .tool-call .tool-name { font-weight: 600; color: var(--accent2); }
-  .tool-call .tool-args { color: var(--text2); font-size: 11px; }
-  .tool-call .tool-result {
-    margin-top: 6px; padding: 6px 8px; background: var(--surface);
-    border-radius: 6px; font-size: 11px; max-height: 160px; overflow-y: auto;
-    white-space: pre-wrap; word-break: break-all;
-    color: var(--text2); border: 1px solid var(--border);
+  .tool-call.is-error { border-color: #4a2030; }
+  .tool-call > summary {
+    list-style: none; display: flex; align-items: center; gap: 7px;
+    padding: 7px 10px; cursor: pointer; user-select: none;
   }
-  .tool-call .tool-result.error { color: var(--error); border-color: #4a2030; }
-  .tool-call .tool-result.ok { color: var(--success); }
+  .tool-call > summary::-webkit-details-marker { display: none; }
+  .tool-call > summary:hover { background: var(--surface2); }
+  .tool-call .tool-status { flex-shrink: 0; width: 14px; text-align: center; font-size: 11px; font-weight: 700; }
+  .tool-call.is-ok .tool-status { color: var(--success); }
+  .tool-call.is-error .tool-status { color: var(--error); }
+  .tool-call .tool-name { font-weight: 600; color: var(--accent2); font-family: var(--mono); font-size: 11.5px; flex-shrink: 0; }
+  .tool-call .tool-summary { color: var(--text2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .tool-call .tool-meta { flex-shrink: 0; color: var(--text2); font-size: 10px; opacity: 0.85; font-family: var(--mono); }
+  .tool-call .chev { flex-shrink: 0; color: var(--text2); font-size: 9px; transition: transform 0.15s; }
+  .tool-call[open] .chev { transform: rotate(90deg); }
+  .tool-call .tool-body { padding: 0 10px 9px; border-top: 1px solid var(--tool-border); }
+  .tool-call .tool-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); margin: 8px 0 3px; }
+  .tool-call .result-head { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .tool-call .result-head .tool-section-label { margin: 0; }
+  .tool-call pre {
+    margin: 0; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; font-size: 11px; line-height: 1.45; font-family: var(--mono);
+    max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all; color: var(--text2);
+  }
+  .tool-call pre.script { white-space: pre; color: var(--text); }
+  .tool-call.is-error .result-pre { color: var(--error); border-color: #4a2030; }
+  .tool-call .j-key { color: #7fb3ff; }
+  .tool-call .j-str { color: #a8d8a8; }
+  .tool-call .j-num { color: #f0c674; }
+  .tool-call .copy-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 4px; font-size: 10px; padding: 1px 6px; cursor: pointer; }
+  .tool-call .copy-btn:hover { color: var(--text); border-color: var(--accent); }
 
   #input-area { flex-shrink: 0; padding: 8px 10px; background: var(--surface); border-top: 1px solid var(--border); }
-  #input-area form { display: flex; gap: 6px; }
+  #input-area form { display: flex; flex-direction: column; gap: 2px; }
+  .input-row { display: flex; gap: 6px; align-items: flex-end; }
   #prompt {
     flex: 1; background: var(--surface2); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 8px 12px; color: var(--text);
@@ -116,20 +142,40 @@
     cursor: pointer; display: flex; align-items: center; justify-content: center;
     transition: background 0.15s;
   }
+  #send-btn svg { width: 17px; height: 17px; pointer-events: none; }
   #send-btn:hover { background: var(--accent2); }
+  #send-btn:hover svg { transform: translate(1px, -1px); }
+  #send-btn svg { transition: transform 0.15s; }
   #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  #status { display: none; padding: 4px 12px; background: #1a1020; border-top: 1px solid #3a2050; font-size: 11px; color: var(--text2); text-align: center; flex-shrink: 0; }
-  #status.visible { display: block; }
+  #status { display: none; align-items: center; justify-content: center; gap: 8px; padding: 5px 12px; background: #1a1020; border-top: 1px solid #3a2050; font-size: 11px; color: var(--text2); flex-shrink: 0; }
+  #status.visible { display: flex; }
+  #status .spinner { width: 12px; height: 12px; flex-shrink: 0; border: 2px solid var(--border); border-top-color: var(--accent2); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #scroll-btn {
+    position: absolute; right: 14px; bottom: 78px; z-index: 6;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--surface2); color: var(--text2);
+    border: 1px solid var(--border); cursor: pointer; display: none;
+    align-items: center; justify-content: center; font-size: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  #scroll-btn:hover { color: var(--text); border-color: var(--accent); }
+  #scroll-btn.visible { display: flex; }
+
+  .thinking-line { color: var(--text2); font-size: 11px; font-style: italic; padding: 2px 0; animation: msgIn 0.15s ease-out; }
+  .muted-note { color: var(--text2); }
+  .vision-note { color: var(--text2); font-size: 11px; font-style: italic; }
 
   /* ── Settings overlay ── */
   #settings {
-    display: none; position: absolute; top: 44px; bottom: 60px; left: 0; right: 0;
+    display: none; position: absolute; top: var(--header-h); bottom: 0; left: 0; right: 0;
     background: var(--bg); z-index: 10; overflow-y: auto; padding: 16px;
     flex-direction: column; gap: 10px;
   }
   #settings.open { display: flex; }
-  #history-panel { display: none; position: absolute; top: 44px; bottom: 60px; left: 0; right: 0; background: var(--bg); z-index: 9; overflow-y: auto; padding: 16px; }
+  #history-panel { display: none; position: absolute; top: var(--header-h); bottom: 0; left: 0; right: 0; background: var(--bg); z-index: 9; overflow-y: auto; padding: 16px; }
   #history-panel.open { display: block; }
   .history-row { display: flex; gap: 6px; margin: 8px 0; }
   .history-row select, .history-row input { flex: 1; min-width: 0; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px; }
@@ -171,17 +217,23 @@
   }
   .empty-state h2 { font-size: 15px; font-weight: 600; color: var(--text); }
   .empty-state p { font-size: 12px; max-width: 300px; }
+  .empty-state .examples { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; width: 100%; max-width: 320px; }
+  .empty-state .example { background: var(--surface); border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 7px 10px; font-size: 12px; cursor: pointer; text-align: left; transition: border-color 0.15s, color 0.15s; }
+  .empty-state .example:hover { border-color: var(--accent); color: var(--text); }
 
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
   /* ── Attachments ── */
-  .attach-controls { display: flex; align-items: center; gap: 8px; padding: 4px 4px 2px; }
-  .attach-btn { background: var(--panel2, #2a2f3a); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; padding: 3px 10px; cursor: pointer; }
-  .attach-btn:hover { border-color: var(--accent, #4c8dff); }
-  .attach-count { font-size: 11px; color: var(--text2); }
-  .attach-preview { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px; }
+  .attach-btn { position: relative; flex-shrink: 0; width: 36px; height: 36px; background: var(--surface2); color: var(--text2); border: 1px solid var(--border); border-radius: var(--radius); font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .attach-btn svg { width: 17px; height: 17px; pointer-events: none; transition: color 0.15s, transform 0.15s; }
+  .attach-btn:hover { border-color: var(--accent); color: var(--accent2); }
+  .attach-btn:hover svg { transform: rotate(-8deg); }
+  .attach-count { position: absolute; top: -5px; right: -5px; min-width: 15px; height: 15px; border-radius: 99px; background: var(--accent); color: #fff; font-size: 9px; line-height: 15px; text-align: center; padding: 0 3px; display: none; }
+  .attach-count.visible { display: block; }
+  .attach-preview { display: flex; flex-wrap: wrap; gap: 6px; }
+  .attach-preview:not(:empty) { padding: 2px 2px 6px; }
   .attach-chip { display: flex; align-items: center; gap: 6px; background: var(--panel2, #2a2f3a); border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; max-width: 200px; }
   .attach-chip img { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; background: #fff; }
   .attach-chip .file-ic { font-size: 18px; }
@@ -195,13 +247,17 @@
 <div id="app">
   <!-- Header -->
   <div id="header">
-    <svg viewBox="0 0 3220 2871" xmlns="http://www.w3.org/2000/svg" style="width:22px;height:22px">
-      <path d="M2256.65 2484.03L2134.81 2049.39L1818.74 923.806L909.855 890.35C590.801 898.868 303.627 1035.23 222.002 1134.03C132.335 1271.65 76.9257 1406.74L65.9034 1441.46C16.1544 2070.54 193.106 2350.51C293.2 2509.6 592.291 2722.34C1159.2 2848.91 1161.28 2848.91L2312.36 2683.51L2256.05 2483.4Z" fill="#C12D9C"/>
-      <path d="M2100.58 1629.25C2065.42 1695.22 2043.68 1725.2L1818.76 923.781L910.175 890.646C1023.38 674.111 1123.17 603.407C1815.79 517.868 2034.14 863.497C2129.77 1070.56 2178.33 1466.69 2100.58 1629.56Z" fill="#C12D9C"/>
-      <path d="M3187.01 2350.84L2312.98 2684.16L2256.67 2484.05L3187.01 2350.84Z" fill="#C12D9C"/>
+    <svg class="logo" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-label="AI Fusion">
+      <path d="M24 3L43 13.5V34.5L24 45L5 34.5V13.5L24 3Z" fill="#241031" stroke="#4a1d4a" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M24 24L5 13.5L5 34.5L24 45V24Z" fill="#7c1a6b"/>
+      <path d="M24 24L43 13.5V34.5L24 45V24Z" fill="#c12d9c"/>
+      <path d="M24 3L5 13.5L24 24L43 13.5L24 3Z" fill="#fc7ab1"/>
+      <path d="M24 24V45" stroke="#2b0c26" stroke-width="1.4"/>
+      <path d="M5 13.5L24 24L43 13.5" stroke="#e268c6" stroke-width="1.2" fill="none" opacity="0.85"/>
     </svg>
     <span class="title">AI Fusion</span>
     <button id="history-btn" title="项目历史与会话恢复">历史</button>
+    <button id="clear-btn" title="清空当前会话对话">清空</button>
     <span id="model-badge" class="badge" title="Open settings">⚙ deepseek</span>
   </div>
 
@@ -224,26 +280,32 @@
     <div class="empty-state" id="empty-state">
       <h2>AI Fusion — Multi-Provider</h2>
       <p>6 providers supported: DeepSeek · Kimi · GLM · OpenAI · Claude · Gemini</p>
+      <div class="examples">
+        <button type="button" class="example">建模：一个 80×60×30 mm 的外壳，正面留 USB 和 BOOT 开孔</button>
+        <button type="button" class="example">修改：把所有圆角半径改成 3mm，并加 2mm 壁厚</button>
+        <button type="button" class="example">查询：列出当前设计所有实体的尺寸和体积</button>
+      </div>
     </div>
   </div>
 
-  <div id="status">Thinking...</div>
+  <button id="scroll-btn" title="回到底部">↓</button>
+
+  <div id="status"><span class="spinner"></span><span id="status-text">Thinking...</span></div>
 
   <div id="input-area">
     <form id="chat-form" autocomplete="off">
       <div id="attach-preview" class="attach-preview"></div>
-      <div class="attach-controls">
-        <button type="button" id="attach-btn" class="attach-btn" title="添加附件（图片或 PDF，单张 ≤8MB，最多 4 个）">📎 附件</button>
-        <span id="attach-count" class="attach-count"></span>
-        <input type="file" id="attach-input" accept="image/*,.pdf" multiple hidden />
+      <div class="input-row">
+        <button type="button" id="attach-btn" class="attach-btn" title="添加附件（图片或 PDF，单张 ≤8MB，最多 4 个）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span id="attach-count" class="attach-count"></span></button>
+        <textarea id="prompt" rows="1" placeholder="描述你想做的设计..." spellcheck="false"></textarea>
+        <button id="send-btn" type="submit" title="Send (Enter)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
       </div>
-      <textarea id="prompt" rows="1" placeholder="Describe what you want to do..." spellcheck="false"></textarea>
-      <button id="send-btn" type="submit" title="Send (Enter)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <line x1="22" y1="2" x2="11" y2="13"/>
-          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-        </svg>
-      </button>
+      <input type="file" id="attach-input" accept="image/*,.pdf" multiple hidden />
     </form>
   </div>
 
@@ -336,10 +398,17 @@
     return `${text.slice(0, head)}\n...[tool result truncated for model context: ${text.length} chars]...\n${text.slice(-tail)}`;
   }
   function modelConversation() {
+    const [curProv, curModel] = modelBadge.dataset.active ? modelBadge.dataset.active.split("/") : [null, null];
+    const canSee = modelSupportsVision(curProv, curModel);
     const copy = conversation.map((msg) => {
       if (msg.role === "tool") return {...msg, content: compactModelText(msg.content)};
       if (msg.role === "assistant" && msg.tool_calls) {
         return {...msg, content: compactModelText(msg.content || "", 6000)};
+      }
+      if (msg._vision && !canSee) {
+        // 截图只发给支持视觉的模型;纯文本模型仅保留提示,避免无效大 payload
+        const { _vision, ...rest } = msg;
+        return {...rest, content: "（视觉校验截图未发送：当前模型不支持图片输入）"};
       }
       return msg;
     });
@@ -411,13 +480,13 @@
     const data = await apiCall("GET", `/api/sessions/${historySession.id}`);
     const state = data.session?.state || {};
     conversation = Array.isArray(state.conversation) ? state.conversation : [];
-    messagesEl.querySelectorAll(".msg, .tool-call").forEach(el => el.remove());
+    messagesEl.querySelectorAll(".msg, .tool-call, .thinking-line").forEach(el => el.remove());
     if (emptyState) emptyState.style.display = conversation.length ? "none" : "";
     for (const msg of conversation) {
       if (msg.role === "user") addMessageEl("user", renderMarkdown(typeof msg.content === "string" ? msg.content : "(已恢复的多模态消息)"));
       else if (msg.role === "assistant" && msg.content) addMessageEl("assistant", renderMarkdown(msg.content));
     }
-    if (showMessage) addMessageEl("assistant", `<span style="color:var(--text2)">已恢复会话：${escapeHtml(data.session.title)}</span>`);
+    if (showMessage) addMessageEl("assistant", `<span class="muted-note">已恢复会话：${escapeHtml(data.session.title)}</span>`);
   }
 
   // ── Vision check (screenshot → multimodal verification) ──
@@ -481,11 +550,39 @@
            r.type === "image" && typeof r.mimeType === "string" &&
            typeof r.data === "string" && r.data.length > 0;
   }
-  function buildVisionCheckMessage(r) {
+  // 截图 base64 → 画布降采样(最长边 ≤maxDim, JPEG quality),把 ~400KB 的
+  // 视口截图压到 ~100-200KB,避免撑爆单次请求与模型上下文。
+  function downscaleImageDataUrl(dataUrl, maxDim = 1024, quality = 0.72) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          if (scale >= 1 || !img.width || !img.height) { resolve(dataUrl); return; }
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { resolve(dataUrl); return; }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        } catch { resolve(dataUrl); }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+  function buildVisionCheckMessage(dataUrl) {
     return [
       { type: "text", text: VISION_CHECK_PROMPT },
-      { type: "image_url", image_url: { url: `data:${r.mimeType};base64,${r.data}` } },
+      { type: "image_url", image_url: { url: dataUrl } },
     ];
+  }
+  function pushVisionCheckMessage(dataUrl) {
+    // 只保留最近一张视觉校验截图:旧截图在下一轮修复后已过时,且会反复
+    // 占用上下文/费用,必须替换而不是无限累积。
+    conversation = conversation.filter(m => !m._vision);
+    conversation.push({ role: "user", content: buildVisionCheckMessage(dataUrl), _vision: true });
   }
 
   // ── Attachments (user-provided images/PDFs as reference) ──
@@ -498,8 +595,13 @@
       if (f.size > ATTACH_MAX_BYTES) { alert(`附件 "${f.name}" 超过 8MB，已跳过`); continue; }
       if (attachments.length >= ATTACH_MAX) { alert(`附件最多 ${ATTACH_MAX} 个`); break; }
       const reader = new FileReader();
-      reader.onload = () => {
-        attachments.push({ name: f.name, mime: isPdf ? "application/pdf" : f.type, dataUrl: reader.result, size: f.size });
+      reader.onload = async () => {
+        // 大图先降采样再入队,否则 base64 会直接撑爆请求体/模型上下文
+        let dataUrl = reader.result;
+        if (isImg && f.size > 512 * 1024) {
+          dataUrl = await downscaleImageDataUrl(dataUrl, 2048, 0.8);
+        }
+        attachments.push({ name: f.name, mime: isPdf ? "application/pdf" : f.type, dataUrl, size: f.size });
         renderAttachments();
       };
       reader.readAsDataURL(f);
@@ -521,7 +623,10 @@
       chip.querySelector(".rm").onclick = () => { attachments.splice(i, 1); renderAttachments(); };
       box.appendChild(chip);
     });
-    if (cnt) cnt.textContent = attachments.length ? `${attachments.length}/${ATTACH_MAX}` : "";
+    if (cnt) {
+      cnt.textContent = attachments.length ? String(attachments.length) : "";
+      cnt.classList.toggle("visible", attachments.length > 0);
+    }
   }
 
   function clearAttachments() { attachments = []; renderAttachments(); }
@@ -543,7 +648,8 @@
   function renderUserBubble(userText) {
     let html = escapeHtml(userText && userText.trim() ? userText : "(仅附件)");
     if (attachments.length) {
-      const chips = attachments.map(a => `<span class="badge-attach">📎 ${escapeHtml(a.name)}</span>`).join("");
+      const clipIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:10px;height:10px;vertical-align:-1px;margin-right:3px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
+      const chips = attachments.map(a => `<span class="badge-attach">${clipIcon}${escapeHtml(a.name)}</span>`).join("");
       html += `<br>${chips}`;
     }
     return html;
@@ -614,9 +720,22 @@
   }
 
   // ── Rendering ──
-  function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+  // 智能滚动:默认吸底;用户向上滚动查看历史时不打扰,并显示"回到底部"按钮
+  const scrollBtn = document.getElementById("scroll-btn");
+  let stickToBottom = true;
+  messagesEl.addEventListener("scroll", () => {
+    const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 48;
+    stickToBottom = nearBottom;
+    if (scrollBtn) scrollBtn.classList.toggle("visible", !nearBottom);
+  });
+  if (scrollBtn) scrollBtn.addEventListener("click", () => { messagesEl.scrollTop = messagesEl.scrollHeight; });
+  function scrollToBottom() { if (stickToBottom) messagesEl.scrollTop = messagesEl.scrollHeight; }
   function hideEmptyState() { if (emptyState) emptyState.style.display = "none"; }
-  function setStatus(t) { statusEl.textContent = t; statusEl.classList.add("visible"); }
+  function setStatus(t) {
+    const tx = document.getElementById("status-text");
+    if (tx) tx.textContent = t;
+    statusEl.classList.add("visible");
+  }
   function clearStatus() { statusEl.classList.remove("visible"); }
 
   // ── Thinking 计时(任何等待状态都显示已耗时, 避免"看起来卡死")──
@@ -654,9 +773,31 @@
     if (!text) return "";
     let html = escapeHtml(text);
     html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => `<pre><code>${code.trim()}</code></pre>`);
+    // 标题与列表:AI 总结常用 "## 验证结果" / "- 尺寸..." 格式,渲染成结构化 HTML
+    html = html.replace(/^###\s+(.+)$/gm, "<h4>$1</h4>");
+    html = html.replace(/^##\s+(.+)$/gm, "<h3>$1</h3>");
     html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    // 连续的 "- item" 行包成 <ul>,内部去换行避免后插 <br>
+    const lines = html.split("\n");
+    const out = [];
+    let inList = false;
+    for (const line of lines) {
+      const li = line.match(/^\s*[-*•]\s+(.*)/);
+      if (li) {
+        if (!inList) { out.push("<ul>"); inList = true; }
+        out.push(`<li>${li[1]}</li>`);
+      } else {
+        if (inList) { out.push("</ul>"); inList = false; }
+        out.push(line);
+      }
+    }
+    if (inList) out.push("</ul>");
+    html = out.join("\n");
+    html = html.replace(/<ul>[\s\S]*?<\/ul>/g, m => m.replace(/\n/g, ""));
     html = html.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join("");
+    // 段落包裹器不应套住块级元素(h3/h4/ul/ol)
+    html = html.replace(/<p>(<(?:h3|h4|ul|ol)[^>]*>)/g, "$1").replace(/(<\/(?:h3|h4|ul|ol)>)<\/p>/g, "$1");
     html = html.replace(/\n/g, "<br>");
     return html;
   }
@@ -671,38 +812,93 @@
     return div;
   }
 
-  function addToolCallEl(toolName, args, result, isError) {
-    hideEmptyState();
-    const div = document.createElement("div");
-    div.className = "tool-call";
-
-    let argsPreview = "";
+  function copyTextToClipboard(text, btn) {
+    const done = () => { if (btn) { const old = btn.textContent; btn.textContent = "已复制"; setTimeout(() => { btn.textContent = old; }, 1200); } };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else { fallbackCopy(text, done); }
+  }
+  function fallbackCopy(text, done) {
     try {
-      const s = JSON.stringify(args);
-      argsPreview = escapeHtml(s.length > 200 ? s.slice(0, 200) + "…" : s);
-    } catch { argsPreview = "(...)"; }
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); ta.remove(); done();
+    } catch {}
+  }
 
-    let resultHtml = "";
-    if (result && result._mock) {
-      resultHtml = escapeHtml(result.message);
-    } else {
-      try {
-        resultHtml = `<pre style="margin:0;white-space:pre-wrap;font-size:11px;max-height:200px;overflow-y:auto;">${escapeHtml(JSON.stringify(result, null, 2).slice(0,500))}</pre>`;
-      } catch { resultHtml = "(unprintable)"; }
-    }
+  // 工具调用一行摘要:让日志卡片收起时也能看懂这一步干了什么
+  function summarizeToolCall(toolName, args, result) {
+    try {
+      if (toolName === "read") return String(args && args.queryType || "");
+      if (toolName === "execute") {
+        if (args && args.featureType === "script") {
+          const lines = String(args.script || "").split("\n").map(s => s.trim());
+          const meaningful = lines.find(s => s && !s.startsWith("#") && !/^def\s+run/.test(s));
+          return meaningful ? meaningful.slice(0, 90) : "script";
+        }
+        return String((args && (args.action || args.fileId)) || "");
+      }
+      if (result && result.error) return String(result.error.message || result.error.code || "").slice(0, 90);
+      return "";
+    } catch { return ""; }
+  }
 
-    div.innerHTML = `
-      <div class="tool-header"><span class="tool-name">🔧 ${escapeHtml(toolName)}</span></div>
-      <div class="tool-args">${argsPreview}</div>
-      <div class="tool-result ${isError?'error':'ok'}">${resultHtml}</div>`;
-    messagesEl.appendChild(div);
+  function highlightJson(jsonStr) {
+    let s = escapeHtml(jsonStr);
+    s = s.replace(/"([^"\\]+)"(\s*:)/g, '<span class="j-key">"$1"</span>$2');
+    s = s.replace(/(:\s*)"([^"\\]*)"/g, '$1<span class="j-str">"$2"</span>');
+    s = s.replace(/(:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=[,\n\r}]|$)/g, '$1<span class="j-num">$2</span>');
+    return s;
+  }
+
+  function addToolCallEl(toolName, args, result, isError, startedAt) {
+    hideEmptyState();
+    const details = document.createElement("details");
+    details.className = `tool-call ${isError ? "is-error" : "is-ok"}`;
+
+    let argsText = "";
+    try { argsText = JSON.stringify(args, null, 2); } catch { argsText = String(args); }
+    const isScript = toolName === "execute" && args && args.featureType === "script" && typeof args.script === "string";
+
+    let resultText = "";
+    if (result && result._mock) resultText = String(result.message);
+    else { try { resultText = JSON.stringify(result, null, 2); } catch { resultText = "(unprintable)"; } }
+
+    const durMs = startedAt ? Date.now() - startedAt : 0;
+    const durLabel = startedAt ? `${(durMs / 1000).toFixed(1)}s` : new Date().toLocaleTimeString();
+    const summary = summarizeToolCall(toolName, args, result);
+
+    details.innerHTML = `
+      <summary>
+        <span class="tool-status">${isError ? "✕" : "✓"}</span>
+        <span class="tool-name">${escapeHtml(toolName)}</span>
+        ${summary ? `<span class="tool-summary" title="${escapeHtml(summary)}">${escapeHtml(summary)}</span>` : "<span class=\"tool-summary\"></span>"}
+        <span class="tool-meta">${escapeHtml(durLabel)}</span>
+        <span class="chev">▶</span>
+      </summary>
+      <div class="tool-body">
+        <div class="tool-section-label">Arguments</div>
+        <pre class="${isScript ? "script" : "args-pre"}">${isScript ? escapeHtml(argsText) : highlightJson(argsText)}</pre>
+        <div class="result-head">
+          <span class="tool-section-label">Result</span>
+          <button type="button" class="copy-btn">复制</button>
+        </div>
+        <pre class="result-pre ${isError ? "error" : ""}">${isError ? escapeHtml(resultText) : highlightJson(resultText)}</pre>
+      </div>`;
+
+    details.querySelector(".copy-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      copyTextToClipboard(resultText, e.target);
+    });
+    messagesEl.appendChild(details);
     scrollToBottom();
   }
 
   function addThinkingEl(text) {
     hideEmptyState();
     const div = document.createElement("div");
-    div.style.cssText = "color:var(--text2);font-size:11px;font-style:italic;padding:4px 0";
+    div.className = "thinking-line";
     div.textContent = text;
     messagesEl.appendChild(div);
     scrollToBottom();
@@ -713,8 +909,7 @@
   async function sendMessage(userText) {
     if (!userText.trim()) return;
     if (isProcessing) {
-      statusEl.textContent = "⏳ 上一条任务仍在处理中，请等待完成…";
-      statusEl.classList.add("visible");
+      setStatus("⏳ 上一条任务仍在处理中，请等待完成…");
       if (thinkTimer) { thinkStart = Date.now(); updateThinking(); }
       return;
     }
@@ -809,6 +1004,7 @@
 
           setThinking(`Running ${toolName}`);
           const thinkingEl = addThinkingEl(`Running ${toolName}...`);
+          const toolStartedAt = Date.now();
 
           let result, isError = false;
           try { result = normalizeToolResult(toolName, await callFusionTool(toolName, args)); }
@@ -817,7 +1013,7 @@
           isError = isError || result?.ok === false;
 
           thinkingEl.remove();
-          addToolCallEl(toolName, args, result, isError);
+          addToolCallEl(toolName, args, result, isError, toolStartedAt);
 
           const shot = isScreenshotResult(result);
           conversation.push({
@@ -835,8 +1031,9 @@
           if (shot && modelSupportsVision(prov, model) && visionCheckEnabled() &&
               verifyRounds < VISION_MAX_ROUNDS) {
             verifyRounds++;
-            conversation.push({ role: "user", content: buildVisionCheckMessage(result) });
-            addMessageEl("assistant", `<div style="color:var(--text2);font-size:11px;font-style:italic">🔍 已获取设计截图，模型开始视觉校验（${verifyRounds}/${VISION_MAX_ROUNDS}）…</div>`);
+            const shotDataUrl = await downscaleImageDataUrl(`data:${result.mimeType};base64,${result.data}`);
+            pushVisionCheckMessage(shotDataUrl);
+            addMessageEl("assistant", `<div class="vision-note">🔍 已获取设计截图，模型开始视觉校验（${verifyRounds}/${VISION_MAX_ROUNDS}）…</div>`);
           }
         }
         setThinking("Thinking");
@@ -1038,6 +1235,23 @@
   document.getElementById("settings-cancel").addEventListener("click", () => settingsEl.classList.remove("open"));
   document.getElementById("settings-save").addEventListener("click", saveSettings);
 
+  // ── 清空会话:只清 UI 与内存对话,历史记录保留在本地数据库 ──
+  document.getElementById("clear-btn").addEventListener("click", () => {
+    if (isProcessing) { setStatus("⏳ 上一条任务仍在处理中，请等待完成…"); return; }
+    conversation = [];
+    messagesEl.querySelectorAll(".msg, .tool-call, .thinking-line").forEach(el => el.remove());
+    if (emptyState) emptyState.style.display = "";
+  });
+
+  // ── 空状态示例:点击直接填入输入框 ──
+  document.querySelectorAll(".empty-state .example").forEach(btn => {
+    btn.addEventListener("click", () => {
+      promptEl.value = btn.textContent.trim();
+      promptEl.dispatchEvent(new Event("input"));
+      promptEl.focus();
+    });
+  });
+
   document.getElementById("history-btn").addEventListener("click", async () => {
     const panel = document.getElementById("history-panel");
     panel.classList.toggle("open");
@@ -1062,13 +1276,13 @@
     const session = (await apiCall("POST", `/api/projects/${created.project.id}/sessions`, {title: "Main design session"})).session;
     created.project.sessions = [session];
     historyProjects.unshift(created.project); historyProject = created.project; historySession = session;
-    renderHistorySelectors(); conversation = []; messagesEl.querySelectorAll(".msg, .tool-call").forEach(el => el.remove()); if (emptyState) emptyState.style.display = "";
+    renderHistorySelectors(); conversation = []; messagesEl.querySelectorAll(".msg, .tool-call, .thinking-line").forEach(el => el.remove()); if (emptyState) emptyState.style.display = "";
   });
   document.getElementById("history-new-session").addEventListener("click", async () => {
     if (!historyProject) return;
     const session = (await apiCall("POST", `/api/projects/${historyProject.id}/sessions`, {title: `Design session ${new Date().toLocaleString()}`})).session;
     historyProject.sessions.unshift(session); historySession = session; renderHistorySelectors();
-    conversation = []; messagesEl.querySelectorAll(".msg, .tool-call").forEach(el => el.remove()); if (emptyState) emptyState.style.display = "";
+    conversation = []; messagesEl.querySelectorAll(".msg, .tool-call, .thinking-line").forEach(el => el.remove()); if (emptyState) emptyState.style.display = "";
   });
 
   // ── Init ──

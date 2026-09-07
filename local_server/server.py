@@ -24,6 +24,7 @@ import os
 import sys
 import time
 import tempfile
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -44,6 +45,11 @@ _MAX_CONTENT_BYTES = 32 * 1024 * 1024
 _MAX_MESSAGES = 80
 _MAX_MESSAGE_CHARS = 120_000
 _MAX_SCRIPT_CHARS = 120_000
+# Per-image base64 budget (~4.5 MB binary): screenshots / attachments are binary
+# payloads, not model text context, so they must not consume the text budget.
+# 120K chars of base64 ≈ a ~88 KB screenshot — counting it fully would reject
+# any vision round.  Kept well below Anthropic's ~5 MB per-image limit.
+_MAX_IMAGE_CHARS = 6_000_000
 _CONNECT_TIMEOUT = 10
 _READ_TIMEOUT = 180
 _MAX_PROVIDER_RETRIES = 2
@@ -289,6 +295,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # ── general ──
     "server_port": _DEFAULT_PORT,
     "system_prompt": DEFAULT_SYSTEM_PROMPT,
+    # 采样温度:CAD 脚本生成需要稳定、可复现的输出,默认走低温;
+    # 设为 "none" 或空则不发送 temperature,跟随提供商默认。
+    "temperature": "0.2",
 }
 
 _CAD_TEXT_API_GUIDANCE = (
@@ -358,15 +367,51 @@ def _validate_chat_payload(payload: Any) -> tuple[list[dict[str, Any]], list[dic
     for msg in messages:
         if not isinstance(msg, dict) or msg.get("role") not in {"system", "user", "assistant", "tool"}:
             raise ValueError("each message must be an object with a valid role")
+        if msg["role"] == "tool" and not str(msg.get("tool_call_id") or "").strip():
+            # Anthropic rejects the whole request without it; failing early here
+            # yields a specific, recoverable error instead of killing the repair loop.
+            raise ValueError("tool messages must carry the tool_call_id of the assistant tool call they answer")
         content = msg.get("content", "")
         if isinstance(content, str):
             total_chars += len(content)
         elif isinstance(content, list):
-            total_chars += len(json.dumps(content, ensure_ascii=False))
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    url = ((part.get("image_url") or {}).get("url")) or ""
+                    if url.startswith("data:"):
+                        if len(url) > _MAX_IMAGE_CHARS:
+                            raise ValueError(
+                                f"image attachment exceeds {_MAX_IMAGE_CHARS} characters; "
+                                "attach a smaller image or downscale it"
+                            )
+                        # base64 image data is binary; charge a nominal text budget
+                        total_chars += 512
+                    else:
+                        total_chars += len(url)
+                else:
+                    total_chars += len(json.dumps(part, ensure_ascii=False))
         elif content is not None:
             raise ValueError("message content must be text, multimodal parts, or null")
     if total_chars > _MAX_MESSAGE_CHARS:
         raise ValueError(f"message content exceeds {_MAX_MESSAGE_CHARS} characters")
+    # Runaway-script guardrail (_MAX_SCRIPT_CHARS): an enormous `execute` script
+    # argument would otherwise crowd out the system prompt's influence in later
+    # repair rounds with no bound at all.
+    for msg in messages:
+        if msg.get("role") != "assistant" or not isinstance(msg.get("tool_calls"), list):
+            continue
+        for tc in msg["tool_calls"]:
+            try:
+                if tc.get("function", {}).get("name") != "execute":
+                    continue
+                args = json.loads(tc.get("function", {}).get("arguments") or "{}")
+            except (json.JSONDecodeError, AttributeError):
+                continue
+            script = args.get("script") if isinstance(args, dict) else None
+            if isinstance(script, str) and len(script) > _MAX_SCRIPT_CHARS:
+                raise ValueError(
+                    f"execute script exceeds {_MAX_SCRIPT_CHARS} characters; split the build into smaller steps"
+                )
     tools = payload.get("tools")
     if tools is not None and (not isinstance(tools, list) or len(tools) > 32):
         raise ValueError("tools must be a list of at most 32 items")
@@ -443,6 +488,14 @@ def _model_has_vision(prov: dict[str, Any], model: str) -> bool:
     return model in set(vm)
 
 
+def _host_of(url: str) -> str:
+    """Return the lowercase hostname of a URL, or '' if unparsable."""
+    try:
+        return (urllib.parse.urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
 def _strip_unsupported_images(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     """纵深防御:把 user 消息中的图片附件替换为文本提示(供纯文本模型调用时防御 400)。"""
     changed = 0
@@ -469,6 +522,33 @@ def _strip_unsupported_images(messages: list[dict[str, Any]]) -> tuple[list[dict
 # Converts OpenAI-format messages+tools → Anthropic Messages API format,
 # and converts the response back to OpenAI format so the chat UI
 # does not need to know about provider-specific formats.
+
+def _as_anthropic_blocks(content: Any) -> list[dict[str, Any]]:
+    """Normalize message content to Anthropic content blocks for merging."""
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}] if content else []
+    if isinstance(content, list):
+        return content
+    return []
+
+
+def _merge_adjacent_same_role(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge consecutive same-role messages into one.
+
+    The Anthropic Messages API requires alternating user/assistant roles.
+    Multi-tool-call turns produce consecutive tool messages (each mapped to a
+    user message), and the UI may also emit adjacent user turns — both are
+    rejected by the API as "roles must alternate".
+    """
+    merged: list[dict[str, Any]] = []
+    for m in msgs:
+        if merged and merged[-1]["role"] == m["role"]:
+            prev = merged[-1]
+            prev["content"] = _as_anthropic_blocks(prev["content"]) + _as_anthropic_blocks(m["content"])
+        else:
+            merged.append(dict(m))
+    return merged
+
 
 def _anthropic_convert_messages(openai_messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
     """
@@ -548,7 +628,7 @@ def _anthropic_convert_messages(openai_messages: list[dict[str, Any]]) -> tuple[
                 }],
             })
 
-    return anthropic_msgs, system_content
+    return _merge_adjacent_same_role(anthropic_msgs), system_content
 
 
 def _anthropic_convert_tools(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -606,7 +686,14 @@ def _anthropic_response_to_openai(anthropic_resp: dict[str, Any]) -> dict[str, A
                 },
             })
 
-    finish_reason = "tool_calls" if tool_calls else ("stop" if anthropic_resp.get("stop_reason") == "end_turn" else "stop")
+    # Map Anthropic stop_reason → OpenAI finish_reason honestly so callers can
+    # detect truncated responses ("length") instead of treating them as done.
+    if tool_calls:
+        finish_reason = "tool_calls"
+    elif anthropic_resp.get("stop_reason") == "max_tokens":
+        finish_reason = "length"
+    else:
+        finish_reason = "stop"
     usage = anthropic_resp.get("usage", {})
 
     return {
@@ -641,10 +728,15 @@ def _openai_compatible_call(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None,
     tool_choice: str | None,
+    temperature: float | None = 0.2,
     timeout: int = 180,
 ) -> tuple[int, dict[str, Any]]:
     """Call an OpenAI-compatible /chat/completions endpoint."""
     body: dict[str, Any] = {"model": model, "messages": messages}
+    # Reasoning-style models reject "temperature"; callers may pass None to
+    # fall back to the provider's own default instead.
+    if temperature is not None:
+        body["temperature"] = temperature
     if tools:
         body["tools"] = tools
     if tool_choice:
@@ -666,6 +758,7 @@ def _anthropic_call(
     model: str,
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None,
+    temperature: float | None = 0.2,
     timeout: int = 180,
 ) -> tuple[int, dict[str, Any]]:
     """Call the Anthropic Messages API with format conversion."""
@@ -677,6 +770,8 @@ def _anthropic_call(
         "messages": anthropic_msgs,
         "max_tokens": 8192,
     }
+    if temperature is not None:
+        body["temperature"] = temperature
     if system:
         body["system"] = system
     if anthropic_tools:
@@ -794,8 +889,18 @@ def create_app() -> Flask:
         except (TypeError, ValueError, BadRequest) as exc:
             return _error_response(str(exc), "invalid_request", 400, request_id)
 
-        # Inject system prompt if not present
-        if not any(m.get("role") == "system" for m in messages):
+        # Inject or merge the server-side CAD guidance.  It must reach the model
+        # even when the client supplies its own system message (e.g. a UI
+        # placeholder), so merge into it instead of gating on presence.
+        _has_system = False
+        for m in messages:
+            if m.get("role") == "system":
+                _has_system = True
+                content = m.get("content", "")
+                if isinstance(content, str) and "SketchTexts.createInput(text, position)" not in content:
+                    m["content"] = content + "\n\n" + _CAD_TEXT_API_GUIDANCE
+                break
+        if not _has_system:
             system_prompt = cfg["system_prompt"]
             if "SketchTexts.createInput(text, position)" not in system_prompt:
                 system_prompt += _CAD_TEXT_API_GUIDANCE
@@ -837,6 +942,19 @@ def create_app() -> Flask:
         base_url_key = f"{provider_id}_base_url"
         base_url = payload.get("base_url") or cfg.get(base_url_key) or prov["base_url"]
 
+        # Security: never send the stored API key to an arbitrary host chosen by
+        # a web page.  A per-request base_url is honored only when it points at a
+        # loopback address (local gateways/proxies) or at the same host as the
+        # provider's configured/default endpoint.
+        if payload.get("base_url"):
+            allowed_hosts = {_host_of(prov["base_url"]), _host_of(cfg.get(base_url_key) or "")}
+            host = _host_of(payload["base_url"])
+            if host and host not in allowed_hosts and host not in {"127.0.0.1", "localhost", "::1"}:
+                return _error_response(
+                    "base_url must point to the provider's configured endpoint or a loopback address",
+                    "base_url_not_allowed", 400, request_id,
+                )
+
         # Use payload tools or default Fusion tools
         effective_tools = tools_supplied if tools_supplied is not None else FUSION_TOOLS
 
@@ -844,18 +962,30 @@ def create_app() -> Flask:
         if not _model_has_vision(prov, model):
             messages, _stripped = _strip_unsupported_images(messages)
 
+        # Sampling temperature: deterministic CAD script generation benefits from
+        # low temperature.  Resolution: payload > config ("0.2" default);
+        # "none"/empty/invalid falls back to the provider's own default.
+        raw_temperature = payload.get("temperature", cfg.get("temperature", ""))
+        try:
+            temperature = float(raw_temperature)
+            if not 0.0 <= temperature <= 2.0:
+                raise ValueError
+        except (TypeError, ValueError):
+            temperature = None
+
         try:
             if api_format == "openai":
                 status, data = _openai_compatible_call(
                     base_url=base_url, api_key=api_key, model=model,
                     messages=messages, tools=effective_tools,
-                    tool_choice=tool_choice,
+                    tool_choice=tool_choice, temperature=temperature,
                 )
             elif api_format == "anthropic":
                 status, data = _anthropic_call(
                     base_url=base_url, api_key=api_key,
                     api_version=prov.get("api_version", "2023-06-01"),
                     model=model, messages=messages, tools=effective_tools,
+                    temperature=temperature,
                 )
             else:
                 return jsonify({"error": f"Unsupported API format: {api_format}"}), 500
@@ -937,7 +1067,7 @@ def create_app() -> Flask:
             return _error_response("config update must be a JSON object", "invalid_request", 400, request_id)
 
         allowed_keys: set[str] = {
-            "provider", "model", "system_prompt",
+            "provider", "model", "system_prompt", "temperature",
         }
         # Add per-provider API key and base_url keys
         for pid in PROVIDERS:
@@ -963,19 +1093,19 @@ def create_app() -> Flask:
         return jsonify({"status": "ok", "updated": list(updates.keys())})
 
     # ── CORS ──
-    _LOCAL_ORIGINS = frozenset({
-        "http://127.0.0.1:8765",
-        f"http://127.0.0.1:{_DEFAULT_PORT}",
-        "null",
-    })
+    # Only loopback origins may call the local API.  Notably "null" (file://
+    # pages, sandboxed iframes) is rejected: a downloaded HTML file opened
+    # locally would otherwise be able to spend the user's API keys.
+    import re as _re
+    _LOOPBACK_ORIGIN = _re.compile(r"^https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$")
 
     @app.after_request
     def add_cors_headers(resp):
         origin = request.headers.get("Origin", "")
-        if origin in _LOCAL_ORIGINS or not origin:
-            resp.headers["Access-Control-Allow-Origin"] = origin or "http://127.0.0.1:8765"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-AIFusion-Token"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        if origin and _LOOPBACK_ORIGIN.match(origin):
+            resp.headers["Access-Control-Allow-Origin"] = origin
+            resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-AIFusion-Token"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         return resp
 
     return app
