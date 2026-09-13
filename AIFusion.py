@@ -6,6 +6,7 @@ The local Flask server runs inside Fusion's Python process in a daemon thread.
 Flask + requests are auto-installed via pip on first run.
 """
 
+import importlib
 import json
 import os
 import subprocess
@@ -243,6 +244,23 @@ def _server_running(port: int | None = None) -> bool:
         return False
 
 
+def _reload_local_modules() -> None:
+    """Evict cached `local_server*` modules so a restart loads the latest code.
+
+    The Flask app runs inside Fusion's *own* Python process, so
+    ``sys.modules["local_server.server"]`` survives every add-in stop/start.
+    Without this eviction the import in :func:`_start_server` is a no-op and the
+    process keeps serving whichever build was imported first — a newly added
+    route then 404s ("本地服务未加载最新接口") even though the file on disk is
+    current and the add-in was restarted.
+    """
+    for name in [m for m in sys.modules if m == "local_server" or m.startswith("local_server.")]:
+        sys.modules.pop(name, None)
+    # drop the finders'/bytecode caches too, so a file added since the last
+    # import is noticed immediately
+    importlib.invalidate_caches()
+
+
 def _start_server() -> bool:
     global _server_thread, _http_server, _SERVER_PORT
     if _server_running():
@@ -257,6 +275,8 @@ def _start_server() -> bool:
         sys.path.insert(0, addin_root)
 
     try:
+        # 必须先丢缓存再 import:Fusion 进程会跨重启复用 sys.modules 里的旧模块
+        _reload_local_modules()
         from local_server.server import create_app
         app = create_app()
     except Exception:

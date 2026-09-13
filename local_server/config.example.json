@@ -14,5 +14,6 @@
   "google_api_key": "",
   "google_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
   "server_port": 8765,
+  "provider_read_timeout": 420,
   "system_prompt": "You are AI Fusion, an AI copilot for Autodesk Fusion 360."
 }

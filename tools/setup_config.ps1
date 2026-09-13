@@ -44,7 +44,7 @@ if ($key) {
         }
     }
     $cfg.provider         = "deepseek"
-    $cfg.model            = "deepseek-v4-pro"
+    $cfg.model            = "deepseek-flash"
     $cfg.deepseek_api_key = $key
 
     $dir = Split-Path -Parent $cfgPath

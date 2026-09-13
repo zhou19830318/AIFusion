@@ -27,19 +27,19 @@
 <h2>Features</h2>
 <ul>
   <li>Docked chat palette inside Fusion (no browser tab)</li>
-  <li><strong>6 AI providers</strong> with latest flagship models (2026-08): DeepSeek · Kimi · Zhipu GLM · OpenAI · Claude · Gemini</li>
+  <li><strong>6 AI providers</strong> with latest flagship models (2026-09): DeepSeek · Kimi · Zhipu GLM · OpenAI · Claude · Gemini</li>
   <li><strong>Agentic tool loop</strong> — the model reads model state (<code>read</code>), builds via Python scripts (<code>execute</code>), up to 10 rounds per request</li>
   <li><strong>Visual verification loop</strong> — captures the Fusion viewport and lets vision-capable models sanity-check the design (up to 3 repair rounds; screenshots auto-downscaled)</li>
   <li><strong>Attachments</strong> — images / PDFs (≤8 MB each, max 4) as design reference, auto-downscaled in the browser</li>
   <li><strong>Project history</strong> — conversations persist to a local SQLite database; restore any session after a restart</li>
-  <li>Capability-aware gating: text-only models (DeepSeek official API, GLM-5.3) degrade gracefully instead of failing</li>
+  <li>Capability-aware gating: text-only models (GLM-5.3, deepseek-v4-pro) degrade gracefully instead of failing</li>
   <li>Auto-dependency install; model aliases (<code>sonnet5</code>, <code>fable</code>, <code>gpt5.6</code>, <code>gemini-3.7</code>); low sampling temperature (0.2) for reproducible scripts; collapsible tool-call log cards</li>
 </ul>
 
 <h2>Supported providers</h2>
 <table>
   <tr><th>Provider</th><th>Models</th><th>Image input</th></tr>
-  <tr><td>DeepSeek</td><td>deepseek-v4-pro, deepseek-v4-flash</td><td class="no">✗ (official API text-only)</td></tr>
+  <tr><td>DeepSeek</td><td>deepseek-flash, deepseek-v4-pro</td><td class="ok">✓ (deepseek-flash, native multimodal)</td></tr>
   <tr><td>Kimi (Moonshot)</td><td>kimi-k3</td><td class="ok">✓</td></tr>
   <tr><td>Zhipu GLM</td><td>glm-5.3</td><td class="no">✗</td></tr>
   <tr><td>OpenAI</td><td>gpt-5.6-sol / terra / luna</td><td class="ok">✓</td></tr>
@@ -60,7 +60,7 @@
 <p>Edit <code>local_server\config.json</code> (local file, <strong>git-ignored</strong>) and set at least one provider key, e.g.:</p>
 <pre>{
   "provider": "deepseek",
-  "model": "deepseek-v4-pro",
+  "model": "deepseek-flash",
   "deepseek_api_key": "sk-your-deepseek-key-here"
 }</pre>
 <p>Full key set: <code>deepseek</code> / <code>kimi</code> / <code>zhipu</code> / <code>openai</code> / <code>anthropic</code> / <code>google_api_key</code> (each provider also has a <code>&lt;provider&gt;_base_url</code> override). Use <code>local_server/config.example.json</code> as the key-less template. Keys are obtained from each provider's platform (DeepSeek, open.bigmodel.cn, platform.openai.com, console.anthropic.com, aistudio.google.com, platform.moonshot.cn). Provider keys are also read from environment variables (e.g. <code>DEEPSEEK_API_KEY</code>) as a fallback.</p>

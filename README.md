@@ -11,33 +11,35 @@ AIFusion is a **native Fusion 360 add-in** that embeds a docked AI chat palette 
 ## Features
 
 - **Docked chat palette** — the AI copilot lives inside Fusion, no browser tab needed
-- **6 AI providers** — DeepSeek, Kimi (Moonshot), Zhipu GLM, OpenAI, Anthropic Claude, Google Gemini, using latest flagship models (2026-08)
+- **6 AI providers** — DeepSeek, Kimi (Moonshot), Zhipu GLM, OpenAI, Anthropic Claude, Google Gemini, using latest flagship models (2026-09)
 - **Automatic provider detection** — if exactly one API key is configured, it is selected automatically
 - **Agentic tool loop** — the model plans, queries model state (`read`), and runs Python scripts against the Fusion API (`execute`), up to 10 rounds per request
 - **Visual verification loop** — after building, the palette captures the Fusion viewport and feeds it back to vision-capable models for a design sanity check (up to 3 repair rounds); only the latest screenshot is kept, and images are auto-downscaled client-side
 - **Attachments** — attach images or PDFs (≤ 8 MB each, max 4) as design reference; oversized images are downscaled in the browser before upload
-- **Capability-aware adaptation** — image input is gated per model (e.g. DeepSeek's official API and GLM-5.3 are text-only, so images are replaced by a notice server-side instead of failing)
+- **Capability-aware adaptation** — image input is gated per model (e.g. GLM-5.3 is text-only, so images are replaced by a notice server-side instead of failing)
 - **Verified API knowledge in the prompt** — hard-won Fusion API facts (cm→mm `MM=0.1` constant, `SketchTexts.createInput(text, position)` signature, `root.bRepBodies` access, …) are always merged into the system prompt, even if the client sends its own system message
 - **Model aliases** — type `sonnet5`, `fable`, `gpt5.6` or `gemini-3.7` and the server maps them to real model IDs
 - **Sampling control** — default `temperature: 0.2` for reproducible CAD script generation; override per request or in `config.json` (set `"none"` to follow the provider default, e.g. for reasoning models)
 - **Honest truncation reporting** — Anthropic `max_tokens` stop reason is surfaced as OpenAI-style `finish_reason: "length"`, so a half-written script can be detected instead of silently executed
+- **Truncation recovery** — reasoning models share one output budget between thinking and the answer (DeepSeek's thinking mode defaults to 64K). When reasoning eats all of it the provider returns `HTTP 200` with an empty message; the palette shows the reasoning, retries with a lower `reasoning_effort` (`low`, then `none`) and only then reports an actionable error
+- **Provider call log** — every attempt and response (`finish_reason`, token usage, `TRUNCATED` / `EMPTY_MESSAGE` flags, elapsed time) is appended to `aifusion_debug.log`, so a failed round can be diagnosed after the fact; per-call timeout is configurable via `provider_read_timeout` (default 420 s) and a timeout is no longer retried three times
 - **Project history & session restore** — conversations, tool calls and results are persisted to a local SQLite database (WAL + full synchronous); reopen the palette and restore any session, switching models keeps the context
 - **Hardened local server** — payload caps (messages, chars, body size, image size, script size), provider retries with backoff, CORS restricted to loopback origins, per-request `base_url` whitelist, atomic config writes, API keys always masked in API responses
 - **Polished UI** — collapsible tool-call cards with status/duration/summary/copy, markdown rendering (headings, lists, code), smart auto-scroll with jump-to-bottom, live round & elapsed-time indicator, one-click example prompts, session/project history panel, one-click clear
 - **Auto-dependency install** — missing Python packages (`flask`, `requests`) are installed automatically on first launch; the real Python's `site-packages` is injected into Fusion's interpreter path automatically
 
-## Supported AI Providers (latest flagship models, 2026-08)
+## Supported AI Providers (latest flagship models, 2026-09)
 
 | Provider             | API Format          | Models                                    | Image input                    |
 | -------------------- | ------------------- | ----------------------------------------- | :----------------------------: |
-| **DeepSeek**         | OpenAI-compatible   | deepseek-v4-pro, deepseek-v4-flash        | ❌ (official API is text-only) |
+| **DeepSeek**         | OpenAI-compatible   | deepseek-flash, deepseek-v4-pro           | ✅ (deepseek-flash, native multimodal) |
 | **Kimi (Moonshot)**  | OpenAI-compatible   | kimi-k3                                   | ✅                             |
 | **Zhipu GLM**        | OpenAI-compatible   | glm-5.3                                   | ❌                             |
 | **OpenAI**           | OpenAI-compatible   | gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna  | ✅                             |
 | **Anthropic Claude** | Native Messages API | claude-sonnet-5, claude-fable-5           | ✅                             |
 | **Google Gemini**    | OpenAI-compatible   | gemini-3.7-flash                          | ✅                             |
 
-> **Note:** DeepSeek's and GLM's *official* APIs accept text only. Image gating is handled automatically — send an image while on a text-only model and the server converts it to a notice instead of throwing a 400 error.
+> **Note:** GLM's *official* API accepts text only, and `deepseek-v4-pro` is text-only (`deepseek-flash` is natively multimodal since 2026-09). Image gating is handled automatically — send an image to a text-only model and the server converts it to a notice instead of throwing a 400 error.
 
 **Model aliases** (resolved server-side): `sonnet5` / `sonnet-5` → `claude-sonnet-5`, `fable` → `claude-fable-5`, `gpt5.6` / `gpt-5.6` → `gpt-5.6-sol`, `gemini3.7` / `gemini-3.7` → `gemini-3.7-flash`.
 
@@ -100,7 +102,7 @@ Either use the palette Settings (⚙) inside Fusion, or edit `local_server\confi
 ```json
 {
   "provider": "deepseek",
-  "model": "deepseek-v4-pro",
+  "model": "deepseek-flash",
   "deepseek_api_key": "sk-your-deepseek-key-here"
 }
 ```
@@ -132,7 +134,7 @@ Full key set: `deepseek_api_key`, `kimi_api_key`, `zhipu_api_key`, `openai_api_k
 - **Attachments:** click the paperclip button to attach reference images or PDFs (≤ 8 MB each, max 4).
 - **Vision verification:** enable *"设计完成后自动截图视觉校验"* in Settings to have vision models screenshot-check their own builds (max 3 repair rounds).
 - **History:** the ⏱ button opens the history panel — switch projects, create sessions, or restore a previous conversation. History is stored locally at `.aifusion/history.sqlite3` (override the directory with the `AIFUSION_DATA_DIR` environment variable).
-- **Clear:** the ✕ button clears the current conversation view and in-memory context without touching stored history.
+- **Clear:** the ✕ button **permanently deletes** the current session's stored history (events + snapshot) after a confirmation prompt, so a reopened palette comes back empty. Other sessions are untouched — use *New session* instead if you want to keep the old conversation available for restore.
 
 ## Project Structure
 
@@ -229,7 +231,7 @@ execute(build) → read(screenshot) → Fusion captures viewport PNG (base64)
 
 - Screenshot support ships in the `read` tool (`queryType: "screenshot"`)
 - Enabled via the palette settings toggle *"设计完成后自动截图视觉校验"* (persisted in localStorage)
-- Text-only models skip image injection automatically (DeepSeek official API, GLM-5.3)
+- Vision-capable models (deepseek-flash, Kimi K3, GPT-5.6, Claude, Gemini) screenshot-check their own builds; text-only models skip image injection automatically
 - Only the newest verification screenshot is kept in the conversation — older ones are replaced, not accumulated
 
 ## Attachments (reference images / PDFs)
@@ -258,6 +260,7 @@ Click the **paperclip** button next to the input box to attach reference materia
 | `GET/POST /api/projects/<id>/sessions` | List / create sessions of a project                                           |
 | `GET /api/sessions/<id>`             | Read a session snapshot and its event history                                   |
 | `POST /api/sessions/<id>/events`     | Append a session event and update the snapshot                                  |
+| `DELETE /api/sessions/<id>/history`  | Permanently delete one session's events + snapshot (backs the palette's clear button) |
 | `POST /api/sessions/<id>/archive`    | Archive a session                                                               |
 
 ## Project History & Sessions
@@ -266,6 +269,7 @@ Click the **paperclip** button next to the input box to attach reference materia
 - Default location: `.aifusion/history.sqlite3` inside the add-in folder (so it backs up and migrates with the project); override with `AIFUSION_DATA_DIR`
 - On startup the palette auto-opens the most recent project/session; the history panel lets you switch projects, create sessions, and restore any session — switching models never clears the context
 - **Privacy:** the history store never persists API keys, `Authorization` headers, image/PDF data URLs, or screenshot base64 — attachments are kept only as restorable notices
+- **Clearing:** the ✕ button calls `DELETE /api/sessions/<id>/history`, which removes that session's events and snapshot while keeping the session itself. Clearing only the panel was never enough: the snapshot is exactly what the palette restores on startup, so a client-only clear resurrected the conversation on the next launch
 
 ## Development & Testing
 
@@ -274,7 +278,7 @@ Click the **paperclip** button next to the input box to attach reference materia
 python -m unittest discover -s tests
 ```
 
-The suite (31 tests) covers payload validation, provider routing, the Anthropic adapter (message merging, finish-reason mapping), temperature resolution, config redaction/save, the history API (projects/sessions/events/archive/rehydration, data-URL redaction), and vision-capability stripping. It must run from the **repo root** (not from `local_server/`). `package.json` also exposes `npm run build:local` for a quick `py_compile` syntax check.
+The suite (74 tests) covers payload validation, provider routing, the Anthropic adapter (message merging, finish-reason mapping), temperature and `reasoning_effort` resolution, config redaction/save, the history API (projects/sessions/events/archive/rehydration, data-URL redaction, clear-history), vision-capability stripping, long-session trimming, provider-call logging and truncated-response handling (server contract plus palette static contracts). It must run from the **repo root** (not from `local_server/`). `package.json` also exposes `npm run build:local` for a quick `py_compile` syntax check.
 
 ## FAQ
 
@@ -292,21 +296,38 @@ Check your internet connection, verify the API key (no extra spaces), confirm th
 
 ### I see `DeepSeek returned 400: unknown variant 'image_url'`
 
-DeepSeek's official API is text-only. The current version detects this and automatically strips images (the error only occurs on versions before the gating fix). Switch to a vision model (Kimi K3 / GPT-5.6 / Claude / Gemini) to use image attachments.
+Only possible on the old text-only `deepseek-v4-flash` (deprecated; the name now routes to the multimodal `deepseek-flash`) or `deepseek-v4-pro`. The current version detects text-only models and automatically strips images. For image attachments and the screenshot verification loop, stay on `deepseek-flash`.
 
 ### The chat seems stuck at "Thinking…"
 
 The status bar shows elapsed time and round progress — long multi-tool tasks can take several minutes (especially reasoning models). If the counter is frozen without counting, restart the add-in and report an `aifusion_debug.log` excerpt.
 
-### The history panel says the local server lacks the latest API
+### I see `Error: Empty response` / `模型输出被截断`
 
-Fully stop and re-start the AIFusion add-in — the running server must match the installed files. If the log shows `Server NOT ready after 20 s`, the launcher automatically tries ports 8765–8780 to work around a stale instance holding the default port.
+Reasoning models share **one** output budget between thinking and the answer (DeepSeek's thinking mode defaults to 64K tokens). If the reasoning consumes all of it, the provider still answers `HTTP 200` — but with `content: ""`, no tool calls and `finish_reason: "length"`. The round produced nothing, and the model never got to write or call a tool.
+
+The palette now recognises this: it shows the reasoning that *was* produced, retries twice with a lower `reasoning_effort` (`low`, then `none`), and only then reports an actionable error instead of a bare "Empty response".
+
+Every provider call is also logged to `aifusion_debug.log`:
+
+```
+[2026-09-13 16:23:41] [provider] deepseek-flash openai attempt 1 -> status=200 finish_reason=length content_chars=0 tool_calls=0 reasoning_chars=60866 prompt_tokens=42807 completion_tokens=16184 reasoning_tokens=15886 TRUNCATED EMPTY_MESSAGE elapsed=142.7s
+```
+
+Useful knobs in `local_server\config.json`:
+
+- `provider_read_timeout` (default `420`, range 30–3600) — how long a single provider call may take. Timeouts are no longer retried three times, which used to turn one slow round into ~9 minutes of dead time.
+- Switching to a non-thinking model, or clearing the session and re-opening a more focused task, avoids the shared-budget problem entirely.
+
+### The palette says the local server lacks the latest API
+
+**Fully quit and relaunch Fusion 360.** Restarting only the add-in is *not* enough: the Flask server runs inside Fusion's own Python process, so `local_server.*` stays in `sys.modules` for the whole Fusion session and a re-import would hand back the module that was loaded first. The launcher now evicts those modules before importing (`_reload_local_modules()` in `AIFusion.py`), so an add-in restart does pick up edited code — but a Fusion session started *before* your change still holds the old build. If the log shows `Server NOT ready after …`, the launcher automatically tries ports 8765–8780 to work around a stale instance holding the default port.
 
 ### The model draws incorrectly or crashes
 
 The system prompt merges verified Fusion API guidance. When you hit an error:
 
-1. Check `aifusion_debug.log` for the exact API error (log rotates at ~500 KB)
+1. Check `aifusion_debug.log` for the exact API error (log rotates at ~500 KB). Provider calls are logged too: `[provider] chat rid=… provider=… model=… finish_reason=… prompt_tokens=… completion_tokens=… reasoning_tokens=…`, plus `TRUNCATED` / `EMPTY_MESSAGE` flags for empty answers
 2. The repair loop in the prompt covers common failure patterns (stale body references, wrong property names, `healthState != 0`, …)
 3. File an issue on GitHub with the log excerpt
 
