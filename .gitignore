@@ -6,6 +6,11 @@ __pycache__/
 # InsCode 工具元数据
 .inscode/
 
+# AI 助手本地元数据（不提交）
+.aider-desk/
+.freebuff/
+.aider*
+
 # 运行日志
 aifusion_debug.log
 aifusion_log.txt
