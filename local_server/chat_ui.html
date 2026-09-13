@@ -168,6 +168,33 @@
   .muted-note { color: var(--text2); }
   .vision-note { color: var(--text2); font-size: 11px; font-style: italic; }
 
+  /* AI 的"边想边做"叙述 + 深度思考。过去这两类内容被整体丢弃,面板只剩工具卡片。 */
+  .narration {
+    border-left: 2px solid var(--accent); background: var(--surface);
+    padding: 6px 10px; margin: 2px 0; border-radius: 0 6px 6px 0;
+    color: var(--text); font-size: 12px; line-height: 1.5;
+    animation: msgIn 0.15s ease-out;
+  }
+  .narration .narration-tag {
+    display: block; margin-bottom: 2px; color: var(--accent2);
+    font-size: 10px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase;
+  }
+  .narration p { margin: 0; }
+  details.reasoning {
+    margin: 2px 0; border: 1px dashed var(--border); border-radius: 6px;
+    background: var(--surface); animation: msgIn 0.15s ease-out;
+  }
+  details.reasoning > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    padding: 5px 10px; color: var(--text2); font-size: 10.5px;
+  }
+  details.reasoning > summary::-webkit-details-marker { display: none; }
+  details.reasoning > summary:hover { background: var(--surface2); }
+  details.reasoning .reasoning-body {
+    padding: 0 10px 8px; color: var(--text2); font-size: 11.5px;
+    line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+  }
+
   /* ── Settings overlay ── */
   #settings {
     display: none; position: absolute; top: var(--header-h); bottom: 0; left: 0; right: 0;
@@ -257,7 +284,7 @@
     </svg>
     <span class="title">AI Fusion</span>
     <button id="history-btn" title="项目历史与会话恢复">历史</button>
-    <button id="clear-btn" title="清空当前会话对话">清空</button>
+    <button id="clear-btn" title="清空当前会话（永久删除该会话的历史记录）">清空</button>
     <span id="model-badge" class="badge" title="Open settings">⚙ deepseek</span>
   </div>
 
@@ -390,6 +417,28 @@
   // bounded, useful observation back to the model.
   const MODEL_TOOL_RESULT_LIMIT = 18000;
   const MODEL_CONTEXT_LIMIT = 105000;
+  // 服务端消息数硬上限(超出会被截断):客户端先行瘦身,避免整段历史反复上传
+  const MODEL_MAX_MESSAGES = 80;
+  // 丢弃最老的完整轮次直到消息数达标。切断点只允许落在 user 消息(首选)
+  // 或任意非 tool 消息上,保证 assistant.tool_calls 与其 tool 响应永不被拆散
+  // (拆散会被厂商以 400 拒绝)。
+  function trimConversationWindow(msgs, maxMessages) {
+    let source = msgs;
+    while (source.length > maxMessages) {
+      let cut = -1;
+      for (let i = 1; i < source.length; i++) {
+        const m = source[i];
+        if (m.role === "user") { cut = i; break; }
+        // 不能切在带 tool_calls 的 assistant 上,否则其 tool 响应会变成孤儿(厂商 400)
+        if (cut < 0 && m.role !== "tool" && !(m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length)) cut = i;
+      }
+      if (cut < 0) break;
+      const trimmed = source.slice(cut);
+      if (trimmed.length < 2) break; // 单轮就超限:放弃瘦身,交给服务端截断
+      source = trimmed;
+    }
+    return source;
+  }
   function compactModelText(value, limit = MODEL_TOOL_RESULT_LIMIT) {
     const text = typeof value === "string" ? value : JSON.stringify(value);
     if (!text || text.length <= limit) return text || "";
@@ -400,17 +449,20 @@
   function modelConversation() {
     const [curProv, curModel] = modelBadge.dataset.active ? modelBadge.dataset.active.split("/") : [null, null];
     const canSee = modelSupportsVision(curProv, curModel);
-    const copy = conversation.map((msg) => {
-      if (msg.role === "tool") return {...msg, content: compactModelText(msg.content)};
-      if (msg.role === "assistant" && msg.tool_calls) {
-        return {...msg, content: compactModelText(msg.content || "", 6000)};
+    const copy = trimConversationWindow(conversation, MODEL_MAX_MESSAGES).map((msg) => {
+      // 下划线开头的键是客户端内部标记(_vision/_reasoning),不属于 OpenAI 协议,
+      // 永远不能发给厂商。
+      const clean = {};
+      for (const [k, v] of Object.entries(msg)) if (!k.startsWith("_")) clean[k] = v;
+      if (clean.role === "tool") return {...clean, content: compactModelText(clean.content)};
+      if (clean.role === "assistant" && clean.tool_calls) {
+        return {...clean, content: compactModelText(clean.content || "", 6000)};
       }
       if (msg._vision && !canSee) {
         // 截图只发给支持视觉的模型;纯文本模型仅保留提示,避免无效大 payload
-        const { _vision, ...rest } = msg;
-        return {...rest, content: "（视觉校验截图未发送：当前模型不支持图片输入）"};
+        return {...clean, content: "（视觉校验截图未发送：当前模型不支持图片输入）"};
       }
-      return msg;
+      return clean;
     });
     let total = copy.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : JSON.stringify(m.content || "").length), 0);
     if (total > MODEL_CONTEXT_LIMIT) {
@@ -480,11 +532,33 @@
     const data = await apiCall("GET", `/api/sessions/${historySession.id}`);
     const state = data.session?.state || {};
     conversation = Array.isArray(state.conversation) ? state.conversation : [];
-    messagesEl.querySelectorAll(".msg, .tool-call, .thinking-line").forEach(el => el.remove());
-    if (emptyState) emptyState.style.display = conversation.length ? "none" : "";
+    clearConversationView();
+    // 恢复会话要连推理过程与工具卡片一起重放:历史里这些内容都有存,
+    // 只贴结论会让"AI 到底干了什么"彻底不可见。
+    const toolResults = new Map();
+    for (const m of conversation) {
+      if (m.role === "tool" && m.tool_call_id) toolResults.set(m.tool_call_id, m);
+    }
     for (const msg of conversation) {
-      if (msg.role === "user") addMessageEl("user", renderMarkdown(typeof msg.content === "string" ? msg.content : "(已恢复的多模态消息)"));
-      else if (msg.role === "assistant" && msg.content) addMessageEl("assistant", renderMarkdown(msg.content));
+      if (msg.role === "user") {
+        addMessageEl("user", renderMarkdown(typeof msg.content === "string" ? msg.content : "(已恢复的多模态消息)"));
+      } else if (msg.role === "assistant") {
+        if (typeof msg._reasoning === "string" && msg._reasoning.trim()) addReasoningEl(msg._reasoning);
+        if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+          if (typeof msg.content === "string" && msg.content.trim()) addNarrationEl(msg.content);
+          for (const tc of msg.tool_calls) {
+            let args = {};
+            try { args = JSON.parse(tc.function?.arguments || "{}"); } catch {}
+            const toolMsg = toolResults.get(tc.id);
+            let result = toolMsg ? toolMsg.content : "(结果未记录)";
+            try { result = JSON.parse(result); } catch {}
+            addToolCallEl(tc.function?.name || "tool", args, result,
+                          !!(result && typeof result === "object" && result.ok === false));
+          }
+        } else if (msg.content) {
+          addMessageEl("assistant", renderMarkdown(msg.content));
+        }
+      }
     }
     if (showMessage) addMessageEl("assistant", `<span class="muted-note">已恢复会话：${escapeHtml(data.session.title)}</span>`);
   }
@@ -513,7 +587,9 @@
     if (!contentType.toLowerCase().includes("application/json")) {
       const raw = await resp.text();
       if (/<html|<!doctype/i.test(raw)) {
-        throw new Error(`本地服务未加载最新接口（${path}）。请重启 AIFusion 插件后重试。`);
+        // 本地服务跑在 Fusion 自己的 Python 进程里:只重启插件不会重新执行模块,
+        // 必须完全重启 Fusion 才会加载到新路由。
+        throw new Error(`本地服务未加载最新接口（${path}）。请完全退出并重新启动 Fusion 360 —— 本地服务运行在 Fusion 自身的 Python 进程内，仅重启插件不会重新加载模块。`);
       }
       throw new Error(`接口返回了非 JSON 响应（HTTP ${resp.status}，${path}）`);
     }
@@ -545,10 +621,13 @@
     const el = document.getElementById("cfg-vision-check");
     return !el || el.checked;
   }
-  function isScreenshotResult(r) {
-    return r && typeof r === "object" && !Array.isArray(r) &&
-           r.type === "image" && typeof r.mimeType === "string" &&
-           typeof r.data === "string" && r.data.length > 0;
+  // normalizeToolResult() 把工具输出包成 {ok, tool, payload} 信封,截图数据实际在
+  // payload 里;旧路径可能直接给裸 payload。两种形状都必须认,否则视觉校验永远不触发。
+  function screenshotPayload(r) {
+    if (!r || typeof r !== "object" || Array.isArray(r)) return null;
+    const p = (r.payload && typeof r.payload === "object" && !Array.isArray(r.payload)) ? r.payload : r;
+    if (p.type !== "image" || typeof p.mimeType !== "string") return null;
+    return (typeof p.data === "string" && p.data.length > 0) ? p : null;
   }
   // 截图 base64 → 画布降采样(最长边 ≤maxDim, JPEG quality),把 ~400KB 的
   // 视口截图压到 ~100-200KB,避免撑爆单次请求与模型上下文。
@@ -735,6 +814,13 @@
   if (scrollBtn) scrollBtn.addEventListener("click", () => { messagesEl.scrollTop = messagesEl.scrollHeight; });
   function scrollToBottom() { if (stickToBottom) messagesEl.scrollTop = messagesEl.scrollHeight; }
   function hideEmptyState() { if (emptyState) emptyState.style.display = "none"; }
+  // 对话视图里的全部元素类型(含思路块 💭 与深度思考块 🧠)。清空/重建面板必须
+  // 共用同一个选择器,否则新加的元素类型会残留在面板上。
+  const CONVERSATION_SELECTOR = ".msg, .tool-call, .thinking-line, .narration, details.reasoning";
+  function clearConversationView() {
+    messagesEl.querySelectorAll(CONVERSATION_SELECTOR).forEach(el => el.remove());
+    if (emptyState) emptyState.style.display = conversation.length ? "none" : "";
+  }
   function setStatus(t) {
     const tx = document.getElementById("status-text");
     if (tx) tx.textContent = t;
@@ -909,6 +995,31 @@
     return div;
   }
 
+  // 模型"边想边做"的叙述:伴随 tool_calls 一起返回的 content。
+  // 这是用户理解 AI 分析/规划过程的主要线索,必须显示在工具卡片之前。
+  function addNarrationEl(text) {
+    hideEmptyState();
+    const div = document.createElement("div");
+    div.className = "narration";
+    div.innerHTML = `<span class="narration-tag">💭 思路</span>${renderMarkdown(text)}`;
+    messagesEl.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  // 推理型模型返回的 reasoning_content(思维链):默认折叠,不干扰阅读,
+  // 但需要时随时可展开核对 AI 的判断依据。
+  function addReasoningEl(text) {
+    hideEmptyState();
+    const details = document.createElement("details");
+    details.className = "reasoning";
+    details.innerHTML = `<summary>🧠 深度思考 · ${text.length} 字（点击展开）</summary>`
+                      + `<div class="reasoning-body">${escapeHtml(text)}</div>`;
+    messagesEl.appendChild(details);
+    scrollToBottom();
+    return details;
+  }
+
   // ── Conversation ──
   async function sendMessage(userText) {
     if (!userText.trim()) return;
@@ -945,7 +1056,16 @@
 
   async function runConversationLoop() {
     const MAX_ROUNDS = 10;
+    // 思考型模型把"推理"和"正文"共享同一个输出上限(DeepSeek 思考模式默认 64K)。
+    // 推理吃满上限时厂商返回 HTTP 200,但 content="" / tool_calls=null 且
+    // finish_reason="length" —— 旧代码只会报一句没有信息的 "Empty response"。
+    // 这不是网络故障,降档思考强度重试通常立刻能产出结果,所以给 2 次恢复机会。
+    const MAX_TRUNCATION_RECOVERIES = 2;
     let verifyRounds = 0;
+    let truncationRecoveries = 0;
+    // 降档后在本轮任务内保持:导致截断的诱因(长上下文/高复杂度)不会中途消失,
+    // 再升回去很可能又白等一次超长推理。
+    let reasoningEffortOverride = null;
     const executedCalls = new Set();
     if (!Array.isArray(conversation) || conversation.length === 0) {
       throw new Error("当前会话上下文为空，未发送空请求。请重新输入本次 CAD 修改要求。");
@@ -960,38 +1080,78 @@
       const body = { messages: modelConversation() };
       if (prov) body.provider = prov;
       if (model) body.model = model;
+      // 服务端仅对声明支持该字段的提供商透传(其余忽略),所以这里可以无条件带上。
+      if (reasoningEffortOverride) body.reasoning_effort = reasoningEffortOverride;
 
       const response = await apiCall("POST", "/api/chat", body);
       const choice = response.choices?.[0];
       if (!choice) throw new Error("No response from AI");
 
       const msg = choice.message;
+      const reasoning = typeof msg.reasoning_content === "string" ? msg.reasoning_content.trim() : "";
+      const hasToolCalls = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+
+      // 把"为什么这么做"显示在"做了什么"之前:否则用户只看到一串工具卡片,
+      // 完全感知不到 AI 的分析与规划(这正是可控感的来源)。
+      // 截断轮次尤其重要:至少让用户看到模型确实思考过,而不是面板毫无反应后弹一个错。
+      if (reasoning) addReasoningEl(reasoning);
+
+      // 既没有正文也没有工具调用:正常轮次不应出现,基本等同于"输出被截断"。
+      if (!msg.content && !hasToolCalls) {
+        const truncated = choice.finish_reason === "length";
+        if (truncated && truncationRecoveries < MAX_TRUNCATION_RECOVERIES) {
+          truncationRecoveries++;
+          // 第一次降到 low(少想一点),第二次直接 none(关闭思考模式),保证能产出结果
+          reasoningEffortOverride = truncationRecoveries === 1 ? "low" : "none";
+          addMessageEl("assistant", `<div class="vision-note">⚠️ 模型输出被截断（finish_reason=length，推理占满输出上限），正在降档思考强度重试（${truncationRecoveries}/${MAX_TRUNCATION_RECOVERIES}，reasoning_effort=${reasoningEffortOverride}）…</div>`);
+          conversation.push({
+            role: "user",
+            content: "SYSTEM: your previous reply was truncated during reasoning (finish_reason=length): it contained neither text nor a tool call. Answer briefly now — call the tool if the model still needs changing, otherwise state the conclusion in under 200 words."
+          });
+          await saveHistoryEvent("truncation_retry", {attempt: truncationRecoveries, reasoning_effort: reasoningEffortOverride});
+          continue;
+        }
+        throw new Error(truncated
+          ? `模型输出被截断（finish_reason=length，推理 ${reasoning.length} 字）：推理占满了输出上限，本轮既没有正文也没有工具调用。可尝试：清空会话后重开一个更聚焦的任务，或改用非思考模型。`
+          : `模型返回了空消息（finish_reason=${choice.finish_reason || "unknown"}）：既没有正文也没有工具调用。请重试；若反复出现，请清空会话后重开。`);
+      }
 
       // text response
-      if (msg.content && !msg.tool_calls) {
-        conversation.push({ role: "assistant", content: msg.content });
+      if (msg.content && !hasToolCalls) {
+        // _reasoning 只用于会话恢复时重放思考过程(发送前会被 modelConversation 剥离)
+        conversation.push({ role: "assistant", content: msg.content, ...(reasoning ? { _reasoning: reasoning } : {}) });
         addMessageEl("assistant", renderMarkdown(msg.content));
         await saveHistoryEvent("assistant_message", {has_tool_calls: false});
         return;
       }
 
       // tool calls
-      if (msg.tool_calls && msg.tool_calls.length > 0) {
-        conversation.push({ role: "assistant", content: msg.content || null, tool_calls: msg.tool_calls });
+      if (hasToolCalls) {
+        if (typeof msg.content === "string" && msg.content.trim()) addNarrationEl(msg.content);
+        // _reasoning 仅用于会话恢复时重放思考过程,不会发给厂商(见 modelConversation)
+        conversation.push({
+          role: "assistant",
+          content: msg.content || null,
+          tool_calls: msg.tool_calls,
+          ...(reasoning ? { _reasoning: reasoning } : {}),
+        });
 
         for (const tc of msg.tool_calls) {
           const toolName = tc.function.name;
           let args;
           try { args = JSON.parse(tc.function.arguments || "{}"); } catch { args = {}; }
 
+          // 截图是只读观测:修复后必须能重新截图比对(视觉校验最多 3 轮),
+          // 因此不参与同请求去重;其余工具仍去重,防止重复建模/重复执行。
+          const repeatable = toolName === "read" && args.queryType === "screenshot";
           const callFingerprint = `${toolName}:${JSON.stringify(args)}`;
-          if (executedCalls.has(callFingerprint)) {
+          if (!repeatable && executedCalls.has(callFingerprint)) {
             const duplicate = {ok: false, tool: toolName, error: {code: "duplicate_tool_call", message: "The same tool call was already executed in this request; provide a different repair action."}};
             addToolCallEl(toolName, args, duplicate, true);
             conversation.push({role: "tool", tool_call_id: tc.id, name: toolName, content: JSON.stringify(duplicate)});
             continue;
           }
-          executedCalls.add(callFingerprint);
+          if (!repeatable) executedCalls.add(callFingerprint);
           if (toolName === "execute" && args.featureType === "script" &&
               (typeof args.script !== "string" || !/def\s+run\s*\(\s*_context\s*\)/.test(args.script))) {
             const invalid = {ok: false, tool: toolName, error: {code: "invalid_script", message: "execute script must define def run(_context)."}};
@@ -1019,14 +1179,15 @@
           thinkingEl.remove();
           addToolCallEl(toolName, args, result, isError, toolStartedAt);
 
-          const shot = isScreenshotResult(result);
+          const shotImage = screenshotPayload(result);
+          const shot = !!shotImage;
           conversation.push({
             role: "tool",
             tool_call_id: tc.id,
             name: toolName,
             // 截图 base64 不直接塞进 tool 消息(体积大且会污染纯文本模型), 仅保留摘要
             content: shot
-              ? `[screenshot captured: ${result.mimeType}, base64 ${result.data.length} chars]`
+              ? `[screenshot captured: ${shotImage.mimeType}, base64 ${shotImage.data.length} chars]`
               : (typeof result === "string" ? result : JSON.stringify(result)),
           });
           await saveHistoryEvent("tool_result", {tool: toolName, ok: !isError});
@@ -1035,7 +1196,7 @@
           if (shot && modelSupportsVision(prov, model) && visionCheckEnabled() &&
               verifyRounds < VISION_MAX_ROUNDS) {
             verifyRounds++;
-            const shotDataUrl = await downscaleImageDataUrl(`data:${result.mimeType};base64,${result.data}`);
+            const shotDataUrl = await downscaleImageDataUrl(`data:${shotImage.mimeType};base64,${shotImage.data}`);
             pushVisionCheckMessage(shotDataUrl);
             addMessageEl("assistant", `<div class="vision-note">🔍 已获取设计截图，模型开始视觉校验（${verifyRounds}/${VISION_MAX_ROUNDS}）…</div>`);
           }
@@ -1043,14 +1204,6 @@
         setThinking("Thinking");
         continue;
       }
-
-      if (msg.content) {
-        conversation.push({ role: "assistant", content: msg.content });
-        addMessageEl("assistant", renderMarkdown(msg.content));
-        await saveHistoryEvent("assistant_message", {has_tool_calls: false});
-        return;
-      }
-      throw new Error("Empty response");
     }
 
     // max rounds
@@ -1239,12 +1392,25 @@
   document.getElementById("settings-cancel").addEventListener("click", () => settingsEl.classList.remove("open"));
   document.getElementById("settings-save").addEventListener("click", saveSettings);
 
-  // ── 清空会话:只清 UI 与内存对话,历史记录保留在本地数据库 ──
-  document.getElementById("clear-btn").addEventListener("click", () => {
+  // ── 清空会话:真正删除当前会话的持久化历史 ──
+  // 旧实现只清内存与 DOM,数据库里的快照原封不动 —— 重开面板时 restoreHistory()
+  // 会把刚清掉的对话原样贴回来,看起来就是"清空无效"。
+  document.getElementById("clear-btn").addEventListener("click", async () => {
     if (isProcessing) { setStatus("⏳ 上一条任务仍在处理中，请等待完成…"); return; }
+    if (conversation.length && !confirm("清空当前会话？该会话的历史记录将从本机数据库永久删除，无法恢复。")) return;
+    const status = document.getElementById("history-status");
+    if (historySession) {
+      try {
+        await apiCall("DELETE", `/api/sessions/${historySession.id}/history`);
+      } catch (err) {
+        // 删除失败就不能假装清空了:DB 里还在,重开面板依旧会恢复
+        setStatus(`清空失败：${err.message}`);
+        return;
+      }
+    }
     conversation = [];
-    messagesEl.querySelectorAll(".msg, .tool-call, .thinking-line").forEach(el => el.remove());
-    if (emptyState) emptyState.style.display = "";
+    clearConversationView();
+    if (status) status.textContent = "当前会话历史已清空";
   });
 
   // ── 空状态示例:点击直接填入输入框 ──
@@ -1280,13 +1446,13 @@
     const session = (await apiCall("POST", `/api/projects/${created.project.id}/sessions`, {title: "Main design session"})).session;
     created.project.sessions = [session];
     historyProjects.unshift(created.project); historyProject = created.project; historySession = session;
-    renderHistorySelectors(); conversation = []; messagesEl.querySelectorAll(".msg, .tool-call, .thinking-line").forEach(el => el.remove()); if (emptyState) emptyState.style.display = "";
+    renderHistorySelectors(); conversation = []; clearConversationView();
   });
   document.getElementById("history-new-session").addEventListener("click", async () => {
     if (!historyProject) return;
     const session = (await apiCall("POST", `/api/projects/${historyProject.id}/sessions`, {title: `Design session ${new Date().toLocaleString()}`})).session;
     historyProject.sessions.unshift(session); historySession = session; renderHistorySelectors();
-    conversation = []; messagesEl.querySelectorAll(".msg, .tool-call, .thinking-line").forEach(el => el.remove()); if (emptyState) emptyState.style.display = "";
+    conversation = []; clearConversationView();
   });
 
   // ── Init ──

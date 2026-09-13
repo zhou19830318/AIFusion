@@ -11,35 +11,37 @@ AIFusion 是 **Fusion 360 原生插件**，在 Fusion 内部嵌入一个停靠�
 ## 功能特性
 
 - **嵌入式聊天面板** — AI 副驾驶直接存在于 Fusion 内部，无需浏览器标签页
-- **6 家 AI 提供商** — DeepSeek、Kimi（月之暗面）、智谱 GLM、OpenAI、Anthropic Claude、Google Gemini，全部使用最新旗舰模型（2026-08）
+- **6 家 AI 提供商** — DeepSeek、Kimi（月之暗面）、智谱 GLM、OpenAI、Anthropic Claude、Google Gemini，全部使用最新旗舰模型（2026-09）
 - **自动识别提供商** — 只配置了一个 API Key 时自动选中
 - **智能体工具循环** — 模型自主规划：先 `read` 查询模型状态，再用 `execute` 执行 Python 脚本驱动 Fusion API，每次请求最多 10 轮
 - **视觉校验闭环** — 建模完成后自动抓取 Fusion 视口回传给支持视觉的模型检查设计，最多 3 轮修复；仅保留最新一张校验截图，图片在浏览器端自动降采样
 - **附件上传** — 可附加图片或 PDF（单张 ≤8MB，最多 4 个）作为设计参考；超大图片在浏览器端自动压缩后再上传
-- **按模型能力自适应** — 图片输入按模型门控（DeepSeek 官方 API、GLM-5.3 仅支持文本，服务端自动替换为文字提示而非报 400）
+- **按模型能力自适应** — 图片输入按模型门控（GLM-5.3 仅支持文本，服务端自动替换为文字提示而非报 400）
 - **提示词内置已验证 API 知识** — 实战积累的 Fusion API 关键事实（cm→mm 的 `MM=0.1` 常量、`SketchTexts.createInput(text, position)` 签名、`root.bRepBodies` 访问方式……）始终合并进系统提示词，即使客户端自带 system 消息也不会丢失
 - **模型别名** — 输入 `sonnet5`、`fable`、`gpt5.6`、`gemini-3.7` 自动映射到真实模型 ID
 - **采样控制** — 默认 `temperature: 0.2`，保证 CAD 脚本生成的一致性与可复现性；可按请求或在 `config.json` 中覆盖（设为 `"none"` 跟随提供商默认，适配推理型模型）
 - **诚实的截断报告** — Anthropic 的 `max_tokens` 停止原因会如实映射为 OpenAI 风格的 `finish_reason: "length"`，半截脚本可被检测，不会被当作完整代码静默执行
+- **截断自动恢复** — 推理型模型把同一个输出上限同时用于"推理"和"正文"（DeepSeek 思考模式默认 64K）。推理吃满额度时厂商会返回 `HTTP 200` + 空消息；面板会先展示已产生的推理，再用降档的 `reasoning_effort`（先 `low`、再 `none`）重试，都失败才给出可操作的错误
+- **厂商调用日志** — 每次尝试与响应（`finish_reason`、token 用量、`TRUNCATED` / `EMPTY_MESSAGE` 标记、耗时）都会写入 `aifusion_debug.log`，失败轮次可事后复盘；单次超时可通过 `provider_read_timeout` 配置（默认 420 秒），且超时不再重试 3 次
 - **项目历史与会话恢复** — 对话、工具调用与结果持久化到本地 SQLite 数据库（WAL + FULL synchronous）；重启面板即可恢复任意会话，切换模型不丢上下文
 - **本地服务端加固** — 多层负载上限（消息数/字符数/请求体/单图/脚本长度）、提供商请求指数退避重试、CORS 仅限本机回环来源、按请求 `base_url` 白名单、配置原子写入、API Key 在接口响应中始终脱敏
 - **精致 UI** — 工具调用可折叠卡片（状态/耗时/摘要/一键复制）、markdown 渲染（标题、列表、代码）、智能吸底滚动（可跳回底部）、实时轮次与耗时指示、一键示例任务、项目/会话历史面板、一键清空
 - **依赖自动安装** — 缺少 `flask`/`requests` 时首次启动自动安装，并把真实 Python 的 site-packages 注入 Fusion 解释器路径
 
-## 支持的 AI 提供商（2026-08 最新旗舰）
+## 支持的 AI 提供商（2026-09 最新旗舰）
 
 | 提供商 | API 格式 | 模型 | 图片输入 |
 |--------|---------|------|:---:|
-| **DeepSeek** | OpenAI 兼容 | deepseek-v4-pro、deepseek-v4-flash | ❌（官方 API 仅文本） |
+| **DeepSeek** | OpenAI 兼容 | deepseek-flash、deepseek-v4-pro | ✅（deepseek-flash 原生多模态） |
 | **Kimi（月之暗面）** | OpenAI 兼容 | kimi-k3 | ✅ |
 | **智谱 GLM** | OpenAI 兼容 | glm-5.3 | ❌ |
 | **OpenAI** | OpenAI 兼容 | gpt-5.6-sol、gpt-5.6-terra、gpt-5.6-luna | ✅ |
 | **Anthropic Claude** | 原生 Messages API | claude-sonnet-5、claude-fable-5 | ✅ |
 | **Google Gemini** | OpenAI 兼容 | gemini-3.7-flash | ✅ |
 
-> **注意：** DeepSeek 与 GLM 的*官方* API **仅接受文本**。图片门控已自动化——在纯文本模型上发送图片时，服务端会将其转换为提示文本，而不是报 400 错误。
+> **注意：** GLM 的*官方* API 仅接受文本，`deepseek-v4-pro` 也是纯文本模型（`deepseek-flash` 自 2026-09 起原生支持多模态）。图片门控已自动化——向纯文本模型发送图片时，服务端会将其转换为提示文本，而不是报 400 错误。
 
-**模型别名**（服务端解析）：`sonnet5` / `sonnet-5` → `claude-sonnet-5`，`fable` → `claude-fable-5`，`gpt5.6` / `gpt-5.6` → `gpt-5.6-sol`，`gemini3.7` / `gemini-3.7` → `gemini-3.7-flash`。
+**模型别名**（服务端解析）：`sonnet5` / `sonnet-5` → `claude-sonnet-5`，`fable` → `claude-fable-5`，`gpt5.6` / `gpt-5.6` → `gpt-5.6-sol`，`gemini3.7` / `gemini-3.7` → `gemini-3.7-flash`，`deepseek-v4-flash` → `deepseek-flash`（旧模型名已下线）。
 
 ## 系统要求
 
@@ -100,7 +102,7 @@ install_deps.bat
 ```json
 {
   "provider": "deepseek",
-  "model": "deepseek-v4-pro",
+  "model": "deepseek-flash",
   "deepseek_api_key": "sk-你的-deepseek-key"
 }
 ```
@@ -132,7 +134,7 @@ install_deps.bat
 - **附件：** 点击回形针按钮附加参考图片或 PDF（单张 ≤8MB，最多 4 个）。
 - **视觉校验：** 在设置中开启"设计完成后自动截图视觉校验"，视觉模型会对自己的建模结果截图自检（最多 3 轮修复）。
 - **历史：** ⏱ 按钮打开历史面板——切换项目、新建会话、恢复历史对话。历史保存在本地 `.aifusion/history.sqlite3`（可用环境变量 `AIFUSION_DATA_DIR` 指定其他目录）。
-- **清空：** ✕ 按钮清空当前对话视图与内存上下文，不删除已存储的历史。
+- **清空：** ✕ 按钮会在二次确认后**永久删除**当前会话已存储的历史（事件 + 快照），因此重开面板不会恢复对话。其他会话不受影响——若想保留旧对话以便随时恢复，请改用*新建会话*。
 
 ## 项目结构
 
@@ -229,7 +231,7 @@ execute(建模) → read(screenshot) → Fusion 抓取视口 PNG(base64)
 
 - 截图功能内置于 `read` 工具（`queryType: "screenshot"`）
 - 通过面板设置中的"设计完成后自动截图视觉校验"开关启用（localStorage 持久化）
-- 纯文本模型（DeepSeek 官方 API、GLM-5.3）自动跳过图片注入
+- 视觉模型（deepseek-flash、Kimi K3、GPT-5.6、Claude、Gemini）会对自己的建模结果截图自检；纯文本模型自动跳过图片注入
 - 对话中只保留最新一张校验截图——新截图替换旧截图，不会累积
 
 ## 附件上传（参考图片 / PDF）
@@ -258,6 +260,7 @@ execute(建模) → read(screenshot) → Fusion 抓取视口 PNG(base64)
 | `GET/POST /api/projects/<id>/sessions` | 列出 / 创建项目会话 |
 | `GET /api/sessions/<id>` | 读取会话快照和事件历史 |
 | `POST /api/sessions/<id>/events` | 追加会话事件并更新快照 |
+| `DELETE /api/sessions/<id>/history` | 永久删除单个会话的事件与快照（面板清空按钮的落库接口） |
 | `POST /api/sessions/<id>/archive` | 归档会话 |
 
 ## 项目历史与会话
@@ -266,6 +269,7 @@ execute(建模) → read(screenshot) → Fusion 抓取视口 PNG(base64)
 - 默认位置：插件目录下 `.aifusion/history.sqlite3`（便于随工程一起备份迁移）；可用 `AIFUSION_DATA_DIR` 覆盖
 - 启动时面板自动打开最近的项目/会话；历史面板支持切换项目、新建会话、恢复任意会话——切换模型不会清空上下文
 - **隐私：** 历史库绝不保存 API Key、`Authorization` 头、图片/PDF data URL 或截图 base64——附件只保留可恢复提示
+- **清空：** ✕ 按钮调用 `DELETE /api/sessions/<id>/history`，删除该会话的事件与快照但保留会话本身。只清面板永远不够——面板启动时恢复的正是这份快照，所以纯客户端的清空会在下次启动时把对话原样复活
 
 ## 开发与测试
 
@@ -274,7 +278,7 @@ execute(建模) → read(screenshot) → Fusion 抓取视口 PNG(base64)
 python -m unittest discover -s tests
 ```
 
-测试套件（31 个）覆盖：负载校验、提供商路由、Anthropic 适配器（消息合并、finish_reason 映射）、temperature 解析、配置脱敏/保存、历史 API（项目/会话/事件/归档/重水化、data URL 脱敏）、视觉能力剥离。必须从**仓库根目录**运行（不能在 `local_server/` 内运行）。`package.json` 另提供 `npm run build:local` 做快速 `py_compile` 语法检查。
+测试套件（74 个）覆盖：负载校验、提供商路由、Anthropic 适配器（消息合并、finish_reason 映射）、temperature 与 `reasoning_effort` 解析、配置脱敏/保存、历史 API（项目/会话/事件/归档/重水化、data URL 脱敏、清空历史）、视觉能力剥离、长会话截断、厂商调用日志与截断响应处理（服务端契约 + 面板静态契约）。必须从**仓库根目录**运行（不能在 `local_server/` 内运行）。`package.json` 另提供 `npm run build:local` 做快速 `py_compile` 语法检查。
 
 ## 常见问题
 
@@ -292,21 +296,38 @@ python -m unittest discover -s tests
 
 ### 报 `DeepSeek returned 400: unknown variant 'image_url'`
 
-DeepSeek 官方 API 仅支持文本。当前版本已自动剥离图片（旧版本才会报这个错）。要用图片附件请切换到视觉模型（Kimi K3 / GPT-5.6 / Claude / Gemini）。
+只有旧的纯文本 `deepseek-v4-flash`（已下线；该名称现已路由到多模态的 `deepseek-flash`）或 `deepseek-v4-pro` 才可能报这个错。当前版本会自动检测纯文本模型并剥离图片。要用图片附件和截图校验闭环，请使用 `deepseek-flash`。
 
 ### 聊天看起来卡在 "Thinking…"
 
 状态栏会显示已耗时秒数与轮次进度——长工具链任务（尤其推理型模型）可能耗时数分钟。若秒数完全不动，重启插件并反馈 `aifusion_debug.log` 片段。
 
-### 历史面板提示"本地服务未加载最新接口"
+### 报 `Error: Empty response` / `模型输出被截断`
 
-请完全停止并重新启动 AIFusion 插件——运行中的服务必须与安装的文件一致。若日志出现 `Server NOT ready after 20 s`，新版启动器会自动尝试 8765–8780 端口，以绕开占用默认端口的旧实例。
+推理型模型把**同一个输出上限**同时用于"推理"和"正文"（DeepSeek 思考模式默认 64K tokens）。如果推理把额度全部吃掉，厂商依然返回 `HTTP 200`，但消息是 `content: ""`、没有工具调用、`finish_reason: "length"`——这一轮什么都没产出，模型压根没来得及写正文或调用工具。
+
+面板现在会识别这种情况：先把它已经产生的**推理**显示出来，再用降档的 `reasoning_effort` 重试两次（先 `low`，再 `none`），都失败才给出可操作的错误提示，而不是只抛一句无信息的 "Empty response"。
+
+每次厂商调用也会写进 `aifusion_debug.log`：
+
+```
+[2026-09-13 16:23:41] [provider] deepseek-flash openai attempt 1 -> status=200 finish_reason=length content_chars=0 tool_calls=0 reasoning_chars=60866 prompt_tokens=42807 completion_tokens=16184 reasoning_tokens=15886 TRUNCATED EMPTY_MESSAGE elapsed=142.7s
+```
+
+`local_server\config.json` 里两个相关设置：
+
+- `provider_read_timeout`（默认 `420`，范围 30–3600）—— 单次厂商调用的等待上限。现在超时**不再重试 3 次**：旧行为会把一次"生成较慢"放大成约 9 分钟的假死。
+- 换成非思考模型，或清空会话后重开一个更聚焦的任务，可以直接避开"共享输出上限"这个问题。
+
+### 面板提示"本地服务未加载最新接口"
+
+**请完全退出并重新启动 Fusion 360。** 仅重启插件是无效的：Flask 服务运行在 Fusion 自身的 Python 进程内，`local_server.*` 会在整个 Fusion 会话期间留在 `sys.modules` 里，重新 import 拿到的还是最早加载的那份模块。现在启动器会在 import 前主动清除这些缓存模块（`AIFusion.py` 的 `_reload_local_modules()`），因此重启插件已能加载到新代码——但**在你修改代码之前就已启动的那个 Fusion 会话**仍然持有旧版本。若日志出现 `Server NOT ready after …`，启动器会自动尝试 8765–8780 端口，以绕开占用默认端口的旧实例。
 
 ### 模型画错或崩溃
 
 系统提示词会合并已验证的 Fusion API 指引。遇到错误时：
 
-1. 查看 `aifusion_debug.log` 中的确切 API 报错（日志约 500 KB 轮转）
+1. 查看 `aifusion_debug.log` 中的确切 API 报错（日志约 500 KB 轮转）。厂商调用现在也会入日志：`[provider] chat rid=… provider=… model=… finish_reason=… prompt_tokens=… completion_tokens=… reasoning_tokens=…`，空回复还会带上 `TRUNCATED` / `EMPTY_MESSAGE` 标记
 2. 提示词中的修复流程覆盖常见失败模式（body 引用过期、属性名错误、`healthState ≠ 0` 等）
 3. 带着日志片段到 GitHub 提 issue
 

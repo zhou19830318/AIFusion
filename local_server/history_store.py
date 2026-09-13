@@ -141,6 +141,24 @@ class HistoryStore:
             db.execute("UPDATE projects SET updated_at=? WHERE id=?", (now, row["project_id"]))
         return {"event_id": event_id, "created_at": now}
 
+    def clear_session_history(self, session_id: str) -> int:
+        """Wipe one session's events and snapshot, keeping the session itself.
+
+        The palette's clear button calls this.  It used to only drop the
+        in-memory conversation, so the snapshot still held every message and
+        the next palette start restored the conversation the user had just
+        cleared.  Returns the number of events removed.
+        """
+        with self._lock, self._connect() as db:
+            if not db.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone():
+                raise KeyError("session not found")
+            removed = db.execute("DELETE FROM events WHERE session_id=?", (session_id,)).rowcount
+            db.execute("DELETE FROM snapshots WHERE session_id=?", (session_id,))
+            # keep the cleared session at the top of the project's session list,
+            # so the palette reopens an empty session rather than an older one
+            db.execute("UPDATE sessions SET updated_at=? WHERE id=?", (_now(), session_id))
+        return removed or 0
+
     def archive_session(self, session_id: str) -> None:
         with self._lock, self._connect() as db:
             db.execute("UPDATE sessions SET status='archived', updated_at=? WHERE id=?", (_now(), session_id))
