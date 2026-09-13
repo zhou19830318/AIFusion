@@ -16,7 +16,7 @@ AIFusion is a **native Fusion 360 add-in** that embeds a docked AI chat palette 
 - **Agentic tool loop** — the model plans, queries model state (`read`), and runs Python scripts against the Fusion API (`execute`), up to 10 rounds per request
 - **Visual verification loop** — after building, the palette captures the Fusion viewport and feeds it back to vision-capable models for a design sanity check (up to 3 repair rounds); only the latest screenshot is kept, and images are auto-downscaled client-side
 - **Attachments** — attach images or PDFs (≤ 8 MB each, max 4) as design reference; oversized images are downscaled in the browser before upload
-- **Capability-aware adaptation** — image input is gated per model (e.g. GLM-5.3 is text-only, so images are replaced by a notice server-side instead of failing)
+- **Capability-aware adaptation** — image input is gated per model (e.g. GLM-5.3 and deepseek-v4-pro are text-only, so images are replaced by a notice server-side instead of failing)
 - **Verified API knowledge in the prompt** — hard-won Fusion API facts (cm→mm `MM=0.1` constant, `SketchTexts.createInput(text, position)` signature, `root.bRepBodies` access, …) are always merged into the system prompt, even if the client sends its own system message
 - **Model aliases** — type `sonnet5`, `fable`, `gpt5.6` or `gemini-3.7` and the server maps them to real model IDs
 - **Sampling control** — default `temperature: 0.2` for reproducible CAD script generation; override per request or in `config.json` (set `"none"` to follow the provider default, e.g. for reasoning models)
@@ -34,12 +34,12 @@ AIFusion is a **native Fusion 360 add-in** that embeds a docked AI chat palette 
 | -------------------- | ------------------- | ----------------------------------------- | :----------------------------: |
 | **DeepSeek**         | OpenAI-compatible   | deepseek-flash, deepseek-v4-pro           | ✅ (deepseek-flash, native multimodal) |
 | **Kimi (Moonshot)**  | OpenAI-compatible   | kimi-k3                                   | ✅                             |
-| **Zhipu GLM**        | OpenAI-compatible   | glm-5.3                                   | ❌                             |
+| **Zhipu GLM**        | OpenAI-compatible   | glm-5.3-flash, glm-5.3                    | ✅ (glm-5.3-flash, native multimodal) |
 | **OpenAI**           | OpenAI-compatible   | gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna  | ✅                             |
 | **Anthropic Claude** | Native Messages API | claude-sonnet-5, claude-fable-5           | ✅                             |
 | **Google Gemini**    | OpenAI-compatible   | gemini-3.7-flash                          | ✅                             |
 
-> **Note:** GLM's *official* API accepts text only, and `deepseek-v4-pro` is text-only (`deepseek-flash` is natively multimodal since 2026-09). Image gating is handled automatically — send an image to a text-only model and the server converts it to a notice instead of throwing a 400 error.
+> **Note:** `glm-5.3` (text flagship) and `deepseek-v4-pro` remain text-only (`glm-5.3-flash` is natively multimodal since 2026-08; `deepseek-flash` since 2026-09). Image gating is handled automatically — send an image to a text-only model and the server converts it to a notice instead of throwing a 400 error.
 
 **Model aliases** (resolved server-side): `sonnet5` / `sonnet-5` → `claude-sonnet-5`, `fable` → `claude-fable-5`, `gpt5.6` / `gpt-5.6` → `gpt-5.6-sol`, `gemini3.7` / `gemini-3.7` → `gemini-3.7-flash`.
 

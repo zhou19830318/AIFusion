@@ -34,14 +34,14 @@ AIFusion 是 **Fusion 360 原生插件**，在 Fusion 内部嵌入一个停靠�
 |--------|---------|------|:---:|
 | **DeepSeek** | OpenAI 兼容 | deepseek-flash、deepseek-v4-pro | ✅（deepseek-flash 原生多模态） |
 | **Kimi（月之暗面）** | OpenAI 兼容 | kimi-k3 | ✅ |
-| **智谱 GLM** | OpenAI 兼容 | glm-5.3 | ❌ |
+| **智谱 GLM** | OpenAI 兼容 | glm-5.3-flash、glm-5.3 | ✅（glm-5.3-flash 原生多模态） |
 | **OpenAI** | OpenAI 兼容 | gpt-5.6-sol、gpt-5.6-terra、gpt-5.6-luna | ✅ |
 | **Anthropic Claude** | 原生 Messages API | claude-sonnet-5、claude-fable-5 | ✅ |
 | **Google Gemini** | OpenAI 兼容 | gemini-3.7-flash | ✅ |
 
-> **注意：** GLM 的*官方* API 仅接受文本，`deepseek-v4-pro` 也是纯文本模型（`deepseek-flash` 自 2026-09 起原生支持多模态）。图片门控已自动化——向纯文本模型发送图片时，服务端会将其转换为提示文本，而不是报 400 错误。
+> **注意：** `glm-5.3`（文本旗舰）与 `deepseek-v4-pro` 仍为纯文本模型（`glm-5.3-flash` 自 2026-08、`deepseek-flash` 自 2026-09 起原生支持多模态）。图片门控已自动化——向纯文本模型发送图片时，服务端会将其转换为提示文本，而不是报 400 错误。
 
-**模型别名**（服务端解析）：`sonnet5` / `sonnet-5` → `claude-sonnet-5`，`fable` → `claude-fable-5`，`gpt5.6` / `gpt-5.6` → `gpt-5.6-sol`，`gemini3.7` / `gemini-3.7` → `gemini-3.7-flash`，`deepseek-v4-flash` → `deepseek-flash`（旧模型名已下线）。
+**模型别名**（服务端解析）：`sonnet5` / `sonnet-5` → `claude-sonnet-5`，`fable` → `claude-fable-5`，`gpt5.6` / `gpt-5.6` → `gpt-5.6-sol`，`gemini3.7` / `gemini-3.7` → `gemini-3.7-flash`，`glm5.3-flash` / `glm5.3` → 对应规范名，`deepseek-v4-flash` → `deepseek-flash`（旧模型名已下线）。
 
 ## 系统要求
 

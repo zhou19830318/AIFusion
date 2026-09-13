@@ -359,6 +359,67 @@ class ServerTests(unittest.TestCase):
             for p in sent
         ))
 
+    # ── Zhipu GLM multimodal (glm-5.3-flash, 2026-08) ──────────────────
+
+    def test_glm_flash_registry_and_vision_gating(self):
+        prov = server.PROVIDERS["zhipu"]
+        self.assertIn("glm-5.3-flash", prov["models"])
+        self.assertIn("glm-5.3", prov["models"])
+        self.assertEqual(prov["vision_models"], ["glm-5.3-flash"])
+        self.assertTrue(server._model_has_vision(prov, "glm-5.3-flash"))
+        self.assertFalse(server._model_has_vision(prov, "glm-5.3"))
+        # 别名解析:glm5.3-flash / glm5.3 → 规范名
+        self.assertEqual(server._resolve_model("zhipu", "glm5.3-flash"), "glm-5.3-flash")
+        self.assertEqual(server._resolve_model("zhipu", "glm5.3"), "glm-5.3")
+
+    def test_models_endpoint_reports_glm_flash_vision(self):
+        with patch.object(server, "load_config", return_value=dict(server.DEFAULT_CONFIG)):
+            response = self.client.get("/api/models")
+        self.assertEqual(response.status_code, 200)
+        zp = response.json["providers"]["zhipu"]
+        self.assertIn("glm-5.3-flash", zp["models"])
+        self.assertFalse(zp["vision_all"])
+        self.assertEqual(zp["vision_models"], ["glm-5.3-flash"])
+
+    def test_glm_flash_keeps_images_but_glm_5_3_strips(self):
+        image_part = {"type": "image_url", "image_url": {"url": "data:image/png;base64,QQ=="}}
+        captured: dict = {}
+
+        def fake_call(**kwargs):
+            captured["messages"] = kwargs["messages"]
+            return 200, {"choices": [{"message": {"content": "ok"}}]}
+
+        payload = {
+            "provider": "zhipu",
+            "api_key": "test",
+            "messages": [{"role": "user", "content": [
+                image_part,
+                {"type": "text", "text": "看看这个设计"},
+            ]}],
+        }
+
+        def user_content():
+            return next(m["content"] for m in captured["messages"] if m["role"] == "user")
+
+        # glm-5.3-flash(原生多模态): image_url 块应原样透传给 OpenAI 兼容端点
+        with patch.object(server, "load_config", return_value=dict(server.DEFAULT_CONFIG)), \
+             patch.object(server, "_openai_compatible_call", side_effect=fake_call):
+            response = self.client.post("/api/chat", json={**payload, "model": "glm-5.3-flash"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(image_part, user_content())
+
+        # glm-5.3(纯文本旗舰): 图片应被替换为文字提示,而不是 400
+        with patch.object(server, "load_config", return_value=dict(server.DEFAULT_CONFIG)), \
+             patch.object(server, "_openai_compatible_call", side_effect=fake_call):
+            response = self.client.post("/api/chat", json={**payload, "model": "glm-5.3"})
+        self.assertEqual(response.status_code, 200)
+        sent = user_content()
+        self.assertNotIn(image_part, sent)
+        self.assertTrue(any(
+            isinstance(p, dict) and p.get("type") == "text" and "已自动忽略" in p.get("text", "")
+            for p in sent
+        ))
+
     # ── Long-session message-window trimming (no more hard 400) ──────────
 
     def test_oversized_conversation_trimmed_with_pairs_intact(self):
@@ -949,6 +1010,9 @@ class TruncatedResponseTests(unittest.TestCase):
             providers = self.client.get("/api/models").json["providers"]
         self.assertTrue(providers["deepseek"]["supports_reasoning_effort"])
         self.assertFalse(providers["kimi"]["supports_reasoning_effort"])
+        # GLM-5.3-Flash 的 thinking.type 仅支持 enabled(思考不可关闭),截断降档到 none 会 400,
+        # 因此不声明支持 —— 客户端会直接忽略该字段。
+        self.assertFalse(providers["zhipu"]["supports_reasoning_effort"])
 
     # ── 客户端契约 ──────────────────────────────────────────────────
 

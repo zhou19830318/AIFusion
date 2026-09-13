@@ -202,9 +202,15 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "label": "Zhipu GLM",
         "api_format": "openai",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "models": ["glm-5.3"],
-        # GLM-5.x 系列不支持图片输入（多模态仅 glm-5v-turbo）
-        "vision_models": [],
+        # GLM-5.3-Flash（2026-08）是 GLM-5 系列首个原生多模态模型：
+        # https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash
+        # 图片参数：messages[].content[] 中添加 type: image_url 内容块，
+        # image_url.url 传图片 URL（推荐）或 Base64 Data URL，可多图。
+        # glm-5.3（文本旗舰）仍为纯文本。
+        "models": ["glm-5.3-flash", "glm-5.3"],
+        "vision_models": ["glm-5.3-flash"],
+        # GLM-5.3-Flash 的 thinking.type 仅支持 enabled（思考不可关闭），
+        # 客户端在截断恢复时会降档到 none —— 会 400，因此不声明支持。
         "config_key": "zhipu_api_key",
         "auth_style": "bearer",
     },
@@ -248,6 +254,9 @@ _MODEL_ALIASES: dict[str, str] = {
     # ── Google Gemini ──
     "gemini3.7": "gemini-3.7-flash",
     "gemini-3.7": "gemini-3.7-flash",
+    # ── Zhipu GLM ──
+    "glm5.3-flash": "glm-5.3-flash",
+    "glm5.3": "glm-5.3",
     # ── DeepSeek：旧模型名已下线，官方将其路由到 V4.1 Flash，这里直接映射到新名 ──
     "deepseek-v4-flash": "deepseek-flash",
     "deepseek-v4-flash-vision-exp": "deepseek-flash",
@@ -760,7 +769,7 @@ def _strip_unsupported_images(messages: list[dict[str, Any]]) -> tuple[list[dict
             for p in content:
                 if isinstance(p, dict) and p.get("type") == "image_url":
                     changed += 1
-                    parts.append({"type": "text", "text": "[图片附件已自动忽略:当前模型不支持图片输入。如需查看附件,请切换到支持视觉的模型(deepseek-flash / Kimi K3 / GPT-5.6 / Claude Sonnet 5 / Gemini 3.7 Flash)]"})
+                    parts.append({"type": "text", "text": "[图片附件已自动忽略:当前模型不支持图片输入。如需查看附件,请切换到支持视觉的模型(deepseek-flash / GLM-5.3-Flash / Kimi K3 / GPT-5.6 / Claude Sonnet 5 / Gemini 3.7 Flash)]"})
                 else:
                     parts.append(p)
             out.append({**m, "content": parts})
