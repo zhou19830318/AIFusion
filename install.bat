@@ -48,17 +48,20 @@ if defined FOUND (
 echo.
 
 rem ---- Ensure Python & dependencies ----
-echo [3/4] Checking Python & dependencies...
+echo [3/4] Checking Python ^& dependencies...
 where python >nul 2>nul
 if %errorlevel%==0 (
   python -m pip install --quiet flask requests >nul 2>nul
   if %errorlevel%==0 (
     echo OK: flask + requests installed
   ) else (
-    echo [WARNING] pip install failed, continuing anyway
+    echo [WARNING] pip install failed ^(no network or no permission^).
+    echo [WARNING] AIFusion may fail to start. Install manually:
+    echo          python -m pip install -r "%DEPLOY_DIR%\local_server\requirements.txt"
   )
 ) else (
-  echo [WARNING] Python not found, skipping dependency install
+  echo [WARNING] Python not found in PATH, skipping dependency install.
+  echo [WARNING] AIFusion needs Python 3.8+ with flask and requests.
 )
 echo.
 
